@@ -1,0 +1,48 @@
+{
+  "file_name": "kb_grounding_quality_minimal.json",
+  "version": "1.0",
+  "purpose": "Define grounding, quoting, magnitude handling, and non-duplication rules for the summarization bot.",
+  "policies": {
+    "grounding": {
+      "rules": [
+        "All summary statements must be supported by the provided comments for this aspect.",
+        "Do not add causes, motives, outcomes, or interpretation beyond what comments state.",
+        "Do not provide recommendations, action plans, or prescriptions."
+      ]
+    },
+    "counts_and_magnitude": {
+      "authoritative_counts": [
+        "counts.tip_comment_count",
+        "counts.top_comment_count",
+        "tips_by_tutorial_group[*].comment_count",
+        "tops_by_tutorial_group[*].comment_count"
+      ],
+      "rules": [
+        "Use counts exactly as provided; never estimate or recount from comment lists.",
+        "Use counts to describe relative strength (e.g., 'more tip comments than top comments') without threshold labels (avoid 'most students').",
+        "Counts represent non-empty comments, not selections and not unique respondents."
+      ]
+    },
+    "quotes": {
+      "rules": [
+        "Quotes must be verbatim from comments[].text and include the comment id.",
+        "Never paraphrase inside quotation marks.",
+        "Do not quote empty text (comments are non-empty by construction).",
+        "Choose quotes that represent the main themes and any key splits."
+      ]
+    },
+    "tutorial_group_comparisons": {
+      "rules": [
+        "When comparing tutorial groups, use the per-group comment_count fields and explicitly reference them when making a difference claim.",
+        "If thematic differences are claimed, ground them in the actual text present in each group (no inference from missing data).",
+        "If differences are weak or uncertain due to few comments, state that uncertainty explicitly without thresholds."
+      ]
+    },
+    "non_duplication": {
+      "rules": [
+        "Avoid repeating the same theme across multiple sections.",
+        "Do not restate the integrated summary as a second narrative elsewhere; keep one integrated summary plus a separate short tensions section."
+      ]
+    }
+  }
+}

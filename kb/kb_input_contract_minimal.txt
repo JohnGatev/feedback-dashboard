@@ -1,0 +1,81 @@
+{
+  "file_name": "kb_input_contract_minimal.json",
+  "version": "1.0",
+  "purpose": "Define the required input structure for the minimal per-aspect JSON (non-empty comments only) used by the summarization bot.",
+  "input_contract": {
+    "required_top_level_fields": [
+      "aspect",
+      "counts",
+      "tips_by_tutorial_group",
+      "tops_by_tutorial_group"
+    ],
+    "aspect_object": {
+      "required_fields": [
+        "aspect_key",
+        "display_name",
+        "display_labels_observed"
+      ],
+      "field_semantics": {
+        "aspect_key": "Stable machine key for the aspect (slug).",
+        "display_name": "Primary human-readable label used in the report heading.",
+        "display_labels_observed": "Observed labels from the source instrument; may be empty; informational only."
+      }
+    },
+    "counts_object": {
+      "required_fields": [
+        "tip_comment_count",
+        "top_comment_count"
+      ],
+      "field_semantics": {
+        "tip_comment_count": "Total number of non-empty Tips comments for this aspect (across all tutorial groups).",
+        "top_comment_count": "Total number of non-empty Tops comments for this aspect (across all tutorial groups)."
+      },
+      "constraints": [
+        "Counts are authoritative and must be used directly; do not estimate or recount from comment lists."
+      ]
+    },
+    "tutorial_group_blocks": {
+      "tips_by_tutorial_group": {
+        "value_schema": {
+          "required_fields": [
+            "comment_count",
+            "comments"
+          ],
+          "comments_item_schema": {
+            "required_fields": [
+              "id",
+              "tutorial_group",
+              "text"
+            ]
+          }
+        }
+      },
+      "tops_by_tutorial_group": {
+        "value_schema": {
+          "required_fields": [
+            "comment_count",
+            "comments"
+          ],
+          "comments_item_schema": {
+            "required_fields": [
+              "id",
+              "tutorial_group",
+              "text"
+            ]
+          }
+        }
+      },
+      "field_semantics": {
+        "comment_count": "Number of non-empty comments in this tutorial group for this polarity (Tips or Tops).",
+        "comments": "List of non-empty comments for this tutorial group and polarity.",
+        "comments[].id": "Unique comment identifier for quoting and traceability.",
+        "comments[].tutorial_group": "Tutorial group identifier as string (may be 'unknown').",
+        "comments[].text": "Non-empty comment text (verbatim)."
+      },
+      "constraints": [
+        "Tutorial group keys are strings (e.g., '11', '14', 'unknown').",
+        "Comments are non-empty by construction, do not quote empty texts."
+      ]
+    }
+  }
+}

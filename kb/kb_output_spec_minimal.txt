@@ -1,0 +1,49 @@
+{
+  "file_name": "kb_output_spec_minimal.json",
+  "version": "1.0",
+  "purpose": "Specify the required output format (natural text + tables) for the minimal per-aspect input.",
+  "output_spec": {
+    "format": "markdown",
+    "document_structure": [
+      {
+        "section": "heading",
+        "required": true,
+        "content_rule": "Render as: '## Aspect: <aspect.display_name>'"
+      },
+      {
+        "section": "counts",
+        "required": true,
+        "content_rule": "Report exact counts from counts.tip_comment_count and counts.top_comment_count. Provide balance label by comparing those two numbers only."
+      },
+      {
+        "section": "tutorial_group_counts_table",
+        "required": true,
+        "content_rule": "Markdown table with rows = union of tutorial-group keys from tips_by_tutorial_group and tops_by_tutorial_group; columns: Tutorial group | Tips (comments) | Tops (comments) | Balance (per-group). Use provided per-group comment_count fields only."
+      },
+      {
+        "section": "tutorial_group_differences",
+        "required": true,
+        "content_rule": "Describe notable between-group differences supported by counts and/or distinct themes in group comments; if unclear, state that patterns appear broadly similar given available comments."
+      },
+      {
+        "section": "integrated_summary",
+        "required": true,
+        "content_rule": "One integrated summary covering both Tips and Tops. Exhaustive but non-duplicative: 4–7 theme labels, each with 1–3 bullets. Integrate positive/negative under the same theme when about the same subtopic."
+      },
+      {
+        "section": "tensions_mixed_signals",
+        "required": true,
+        "content_rule": "List main within-aspect splits only; if none, state: 'No clear split observed in the comments.'"
+      },
+      {
+        "section": "representative_quotes",
+        "required": true,
+        "content_rule": "Provide up to 6 tips quotes and up to 6 tops quotes, each verbatim with [id]. Optionally, if one tutorial group is notably different, include up to 2 extra quotes labeled by tutorial group."
+      }
+    ],
+    "balance_rules": {
+      "overall_balance": "If counts.tip_comment_count > counts.top_comment_count => 'More Tips'; if < => 'More Tops'; else 'Balanced'.",
+      "per_group_balance": "If tips_by_tutorial_group[tg].comment_count > tops_by_tutorial_group[tg].comment_count => 'More Tips'; if < => 'More Tops'; else 'Balanced'. Missing group entries imply 0."
+    }
+  }
+}
