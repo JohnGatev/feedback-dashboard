@@ -244,7 +244,11 @@ st.sidebar.markdown(
     '<div style="font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px;">Feedback Dashboard</div>',
     unsafe_allow_html=True)
 if wd:
-    st.sidebar.caption(f"Storage: `{wd}`")
+    st.sidebar.markdown(
+        f'<div style="font-size:0.8rem;color:#D7D6D4;margin-bottom:6px;">'
+        f'Storage: <code style="color:#fff;background:#2c2827;'
+        f'padding:1px 5px;border-radius:3px;">{wd}</code></div>',
+        unsafe_allow_html=True)
     page = st.sidebar.radio("Navigate", ["Setup", "Profiles", "Run", "Explore", "Dashboard"])
     analyses = get_past_analyses(wd)
     selected_analysis = None
@@ -297,10 +301,14 @@ def _profile_editor(p: dict, pd_dir: str):
 
         st.markdown("**Output sections**")
         from profile import VALID_OUTPUT_SECTIONS
-        disabled_secs = [s for s in ("group_counts_table", "group_differences") if p["grouping"] is None]
-        secs = st.multiselect("Sections to include", VALID_OUTPUT_SECTIONS,
-                              default=[s for s in p.get("output_sections", []) if s not in disabled_secs],
-                              disabled=disabled_secs)
+        group_only = {"group_counts_table", "group_differences"}
+        if p["grouping"] is None:
+            avail_secs = [s for s in VALID_OUTPUT_SECTIONS if s not in group_only]
+            default_secs = [s for s in p.get("output_sections", []) if s not in group_only]
+        else:
+            avail_secs = list(VALID_OUTPUT_SECTIONS)
+            default_secs = list(p.get("output_sections", []))
+        secs = st.multiselect("Sections to include", avail_secs, default=default_secs)
         p["output_sections"] = secs
 
         st.markdown("**Prompts**")
@@ -478,10 +486,14 @@ elif page == "Run":
 
     with st.expander("Prompts & sections (inherited, edit for this run)", expanded=False):
         from profile import VALID_OUTPUT_SECTIONS
-        disabled_secs = [s for s in ("group_counts_table", "group_differences") if det["grouping"] is None]
-        secs = st.multiselect("Output sections", VALID_OUTPUT_SECTIONS,
-                              default=[s for s in base["output_sections"] if s not in disabled_secs],
-                              disabled=disabled_secs)
+        group_only = {"group_counts_table", "group_differences"}
+        if det["grouping"] is None:
+            avail_secs = [s for s in VALID_OUTPUT_SECTIONS if s not in group_only]
+            default_secs = [s for s in base["output_sections"] if s not in group_only]
+        else:
+            avail_secs = list(VALID_OUTPUT_SECTIONS)
+            default_secs = list(base["output_sections"])
+        secs = st.multiselect("Output sections", avail_secs, default=default_secs)
         pa = st.text_area("Per-aspect system prompt (base)", base["prompts"]["per_aspect_system"], height=180)
         ex = st.text_area("Executive summary system prompt", base["prompts"]["executive_system"], height=180)
         endpoint = st.text_input("LLM endpoint", base["model"]["endpoint"])
