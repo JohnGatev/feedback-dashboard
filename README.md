@@ -87,3 +87,24 @@ python3 detect.py <csv_path>   # aspect detection on a real CSV
 python3 pipeline.py <csv_path> <out_dir>   # CSV -> aspect JSON
 python3 package.py     # profile export/import round-trip
 ```
+
+## Deploy on Streamlit Community Cloud
+
+1. Push this repo to GitHub (already done if you cloned it).
+2. Go to [share.streamlit.io](https://share.streamlit.io), sign in with GitHub,
+   pick this repo, branch `main`, file `app.py`.
+3. Click **Deploy**. You get a public URL.
+
+On Streamlit Cloud the app runs in **session mode**: each browser gets an
+isolated scratch folder under `/tmp/feedback-dashboard-sessions/<key>/`. This
+means:
+
+- **Concurrent users don't collide** — each sees only their own analyses.
+- **Nothing persists across container restarts** — the `/tmp` scratch is
+  ephemeral. Export your analyses as **package (.zip)** from the Dashboard tab
+  to keep results, or share them with colleagues who import via Setup.
+- The bundled `kb/` files are auto-copied into each session on first load, so
+  profiles that reference `kb/...` resolve out of the box.
+
+To run locally with persistent storage instead, just `streamlit run app.py`
+and pick a working directory in the Setup tab.

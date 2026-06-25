@@ -93,7 +93,47 @@ hr { border-color: #bc0031 !important; opacity: 0.35 !important; }
 
 # --- Storage helpers ---
 
+def _is_cloud() -> bool:
+    """True when running on Streamlit Community Cloud (or any container without
+    a writable persistent home)."""
+    return os.environ.get("STREAMLIT_CLOUD") == "1" or \
+           os.path.isdir("/mount/src") or \
+           "streamlit" in (os.environ.get("HOSTNAME", "") + os.environ.get("HOME", "")).lower()
+
+
+def _session_working_dir() -> str:
+    """Per-browser-session scratch dir on Streamlit Cloud.
+
+    Each Streamlit browser session gets a unique key in session_state; we
+    isolate analyses/profiles under /tmp so concurrent users don't collide.
+    Nothing persists across container restarts, so users export packages to
+    keep results.
+    """
+    root = "/tmp/feedback-dashboard-sessions"
+    if "fb_session_key" not in st.session_state:
+        import uuid
+        st.session_state["fb_session_key"] = uuid.uuid4().hex[:8]
+    sd = os.path.join(root, st.session_state["fb_session_key"])
+    for sub in ("profiles", "analyses", "kb"):
+        os.makedirs(os.path.join(sd, sub), exist_ok=True)
+    return sd
+
+
+def _seed_kb(session_dir: str) -> None:
+    """Copy bundled KB files into a fresh session dir on cloud so profiles
+    that reference `kb/...` resolve."""
+    base_kb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
+    dest = os.path.join(session_dir, "kb")
+    if os.path.isdir(base_kb) and not os.listdir(dest):
+        for fn in os.listdir(base_kb):
+            shutil.copy(os.path.join(base_kb, fn), os.path.join(dest, fn))
+
+
 def get_working_dir() -> str | None:
+    if _is_cloud():
+        sd = _session_working_dir()
+        _seed_kb(sd)
+        return sd
     cfg = load_storage_config()
     wd = cfg.get("working_dir")
     if wd and os.path.isdir(wd):
@@ -102,10 +142,11 @@ def get_working_dir() -> str | None:
 
 
 def set_working_dir(path: str) -> None:
+    if _is_cloud():
+        return  # ignored on cloud; session dir is fixed
     os.makedirs(path, exist_ok=True)
-    os.makedirs(os.path.join(path, "profiles"), exist_ok=True)
-    os.makedirs(os.path.join(path, "analyses"), exist_ok=True)
-    os.makedirs(os.path.join(path, "kb"), exist_ok=True)
+    for sub in ("profiles", "analyses", "kb"):
+        os.makedirs(os.path.join(path, sub), exist_ok=True)
     save_storage_config({"working_dir": path})
 
 
@@ -299,21 +340,30 @@ def _profile_editor(p: dict, pd_dir: str):
 # ─────────────────────────────────────────────────────────────────────────────
 if page == "Setup":
     st.title("Setup")
-    st.caption("Choose a folder on your device where profiles, analyses, and "
-               "knowledge-base files will be stored. Nothing is uploaded; all "
-               "data stays local.")
-    cur = wd
-    if cur:
-        st.success(f"Current working directory: `{cur}`")
-    picked = st.text_input("Working directory path", value=cur or os.path.expanduser("~/feedback-dashboard"))
-    if st.button("Set working directory", use_container_width=False):
-        try:
-            abs_p = os.path.abspath(os.path.expanduser(picked))
-            set_working_dir(abs_p)
-            st.success(f"Set: `{abs_p}`")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Could not set directory: {e}")
+    if _is_cloud():
+        st.caption("Running on Streamlit Cloud. Each browser session gets an "
+                   "isolated scratch folder. Nothing persists across restarts, "
+                   "so **export your analyses as packages** to keep results.")
+        st.success(f"Session storage: `{wd}`")
+        st.info("Tip: use **Import a shared package** below to load a colleague's "
+                "analysis, and **Export → package (.zip)** on the Dashboard tab "
+                "to save or share your own.")
+    else:
+        st.caption("Choose a folder on your device where profiles, analyses, and "
+                   "knowledge-base files will be stored. Nothing is uploaded; all "
+                   "data stays local.")
+        cur = wd
+        if cur:
+            st.success(f"Current working directory: `{cur}`")
+        picked = st.text_input("Working directory path", value=cur or os.path.expanduser("~/feedback-dashboard"))
+        if st.button("Set working directory", use_container_width=False):
+            try:
+                abs_p = os.path.abspath(os.path.expanduser(picked))
+                set_working_dir(abs_p)
+                st.success(f"Set: `{abs_p}`")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not set directory: {e}")
     st.divider()
     st.subheader("Import a shared package")
     up = st.file_uploader("Analysis package (.zip) or profile (.json)", type=["zip", "json"])
