@@ -24,10 +24,6 @@ from profile import slugify, VALID_OUTPUT_SECTIONS
 
 # ── CSV parsing ──────────────────────────────────────────────────────────────
 
-def _open_csv(path: str, delimiter: str) -> list[list[str]]:
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        return list(csv.reader(f, delimiter=delimiter))
-
 
 def _col_index_by_code(row0: list[str], code: str) -> int:
     """Find a column index by matching its ImportId code in row 0."""
@@ -70,18 +66,33 @@ def _segment_value(row: list[str], grouping: dict | None, code_idx: dict[str, in
 
 # ── Stage 1: CSV -> per-aspect JSON ──────────────────────────────────────────
 
-def csv_to_json(profile: dict, csv_path: str, out_dir: str) -> list[str]:
+def _open_csv(path_or_bytes, delimiter: str) -> list[list[str]]:
+    """Open a CSV from a file path or raw bytes."""
+    if isinstance(path_or_bytes, (bytes, bytearray)):
+        text = bytes(path_or_bytes).decode("utf-8-sig")
+        return list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    with open(path_or_bytes, encoding="utf-8-sig", newline="") as f:
+        return list(csv.reader(f, delimiter=delimiter))
+
+
+def csv_to_json(profile: dict, csv_path_or_bytes, out_dir: str) -> list[str]:
     """Convert a survey CSV into one JSON file per aspect.
+
+    `csv_path_or_bytes` is a file path (str) or raw CSV bytes. Accepting
+    bytes avoids a disk round-trip on Streamlit Cloud.
 
     Returns list of written file paths.
     """
     delim = profile["delimiter"]
     if delim == "auto":
-        with open(csv_path, encoding="utf-8-sig", newline="") as f:
-            first = f.readline()
+        if isinstance(csv_path_or_bytes, (bytes, bytearray)):
+            first = bytes(csv_path_or_bytes).decode("utf-8-sig").split("\n", 1)[0]
+        else:
+            with open(csv_path_or_bytes, encoding="utf-8-sig", newline="") as f:
+                first = f.readline()
         delim = ";" if first.count(";") > first.count(",") else ","
 
-    rows = _open_csv(csv_path, delim)
+    rows = _open_csv(csv_path_or_bytes, delim)
     skip = profile["header_rows_to_skip"]
     if len(rows) <= skip:
         raise ValueError("CSV has no data rows after header skip")

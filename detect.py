@@ -28,6 +28,12 @@ def _read_raw(path: str) -> list[str]:
         return f.readlines()
 
 
+def _read_raw_bytes(data: bytes) -> list[str]:
+    """Read CSV lines from in-memory bytes (avoids disk round-trip)."""
+    text = data.decode("utf-8-sig")
+    return text.splitlines(keepends=True)
+
+
 def detect_delimiter(first_line: str) -> str:
     semi = first_line.count(";")
     comma = first_line.count(",")
@@ -39,6 +45,10 @@ def detect_delimiter(first_line: str) -> str:
 def _parse_row(line: str, delimiter: str) -> list[str]:
     rdr = csv.reader(io.StringIO(line), delimiter=delimiter)
     return next(rdr)
+
+
+def _parse_header_rows_from_lines(lines: list[str], delimiter: str, skip: int) -> list[list[str]]:
+    return [_parse_row(lines[i], delimiter) for i in range(min(skip, len(lines)))]
 
 
 def _parse_header_rows(path: str, delimiter: str, skip: int) -> list[list[str]]:
@@ -71,16 +81,21 @@ def _column_codes(row0: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def detect(path: str, header_rows_to_skip: int = 2) -> dict:
+def detect(path_or_bytes, header_rows_to_skip: int = 2) -> dict:
     """Detect survey structure. Returns a partial profile dict.
 
-    The caller fills in prompts, kb_files, model, and may edit aspects.
+    `path_or_bytes` is either a file path (str) or raw CSV bytes. Accepting
+    bytes avoids a disk write/re-read round-trip on Streamlit Cloud, which
+    can trigger an Axios network error on the frontend.
     """
-    lines = _read_raw(path)
+    if isinstance(path_or_bytes, (bytes, bytearray)):
+        lines = _read_raw_bytes(bytes(path_or_bytes))
+    else:
+        lines = _read_raw(path_or_bytes)
     if not lines:
         raise ValueError("Empty CSV")
     delim = detect_delimiter(lines[0])
-    header = _parse_header_rows(path, delim, header_rows_to_skip)
+    header = _parse_header_rows_from_lines(lines, delim, header_rows_to_skip)
     if len(header) < 2:
         raise ValueError("Not enough header rows for detection")
     row0 = header[0]   # codes

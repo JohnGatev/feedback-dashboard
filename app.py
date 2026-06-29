@@ -443,12 +443,10 @@ elif page == "Run":
     if up is None:
         st.stop()
 
-    # Persist upload to a temp path for detection
-    tmp_csv = os.path.join(tempfile.gettempdir(), f"fb_{up.name}")
-    with open(tmp_csv, "wb") as f:
-        f.write(up.getvalue())
+    # Read uploaded bytes once; pass in-memory to detect + pipeline.
+    csv_bytes = up.getvalue()
 
-    det = detect(tmp_csv)
+    det = detect(csv_bytes)
     st.success(f"Detected: delimiter `{det['delimiter']}`, "
                f"{len(det['aspects'])} aspects, "
                f"grouping: {det['grouping']['column'] if det['grouping'] else 'none'}")
@@ -725,7 +723,7 @@ elif page == "Run":
         msg = st.empty()
         msg.info("Step 1/3: Converting CSV to aspect JSONs...")
         try:
-            pipeline.csv_to_json(p, tmp_csv, json_out)
+            pipeline.csv_to_json(p, csv_bytes, json_out)
         except Exception as e:
             st.error(f"Step 1 failed (CSV conversion): {e}")
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -750,7 +748,8 @@ elif page == "Run":
             st.stop()
 
         save_profile(p, os.path.join(run_dir, "profile.json"))
-        shutil.copy(tmp_csv, os.path.join(run_dir, up.name))
+        with open(os.path.join(run_dir, up.name), "wb") as f:
+            f.write(csv_bytes)
         with open(os.path.join(run_dir, "meta.json"), "w") as f:
             json.dump({"id": run_id, "filename": up.name,
                        "timestamp": run_id, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
