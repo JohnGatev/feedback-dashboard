@@ -2,6 +2,3 @@ __pycache__/
 *.pyc
 .DS_Store
 .streamlit/secrets.toml
-analyses/
-profiles/*.json
-config.json
