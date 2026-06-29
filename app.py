@@ -92,6 +92,12 @@ hr { border-color: #bc0031 !important; opacity: 0.35 !important; }
 #   "run_dir": <temp dir path or None>,   # kept only for in-session export
 # }
 
+def _nonempty_aspects(aspect_data: dict, pol: list) -> dict:
+    """Return only aspects with at least one non-empty comment across polarities."""
+    return {k: d for k, d in aspect_data.items()
+            if sum(d.get("counts", {}).get(x["key"] + "_comment_count", 0) for x in pol) > 0}
+
+
 def _load_analysis_from_dir(analysis_dir: str) -> dict | None:
     """Read a temp analysis dir into the session-state shape."""
     json_dir = os.path.join(analysis_dir, "JSON Outputs")
@@ -125,10 +131,15 @@ def _load_analysis_from_dir(analysis_dir: str) -> dict | None:
             prof = load_profile(pp)
         except Exception:
             prof = None
+    prof = prof or default_profile()
+    # Drop aspects with zero comments from the in-memory views.
+    # The on-disk JSON files (and thus the exported zip) are untouched.
+    filtered = _nonempty_aspects(aspect_data, prof["polarity"])
+    md_sections = {k: v for k, v in md_sections.items() if k in filtered}
     return {
         "meta": meta,
-        "profile": prof or default_profile(),
-        "aspect_data": aspect_data,
+        "profile": prof,
+        "aspect_data": filtered,
         "md_sections": md_sections,
         "executive_md": exec_md,
         "run_dir": analysis_dir,
@@ -190,6 +201,7 @@ def build_pdf(active: dict) -> bytes:
 
     profile = active["profile"]
     aspect_data = active["aspect_data"]
+    md_sections = active.get("md_sections", {})
     meta = active.get("meta", {})
     exec_md = active.get("executive_md", "")
     pol = profile["polarity"]
@@ -290,6 +302,26 @@ def build_pdf(active: dict) -> bytes:
         display = d["aspect"]["display_name"]
         story += [PageBreak(), Paragraph(_esc(display), S["h1"]),
                   HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
+
+        # Narrative sections (from md_sections, same lookup as Explore tab)
+        secs = {sk.lower(): sv for sk, sv in md_sections.get(k, {}).items()}
+        themes = next((secs[sk] for sk in ("summary", "integrated summary")
+                       if sk in secs and secs[sk]), None)
+        if themes:
+            story.append(Paragraph("Summary", S["h2"]))
+            _render(themes, story)
+
+        gd = secs.get("segment differences", "") or secs.get("group differences", "")
+        if gd and grouping:
+            story.append(Paragraph("Segment differences", S["h2"]))
+            _render(gd, story)
+
+        ten = secs.get("key tensions / mixed signals", "")
+        if ten:
+            story.append(Paragraph("Key tensions", S["h2"]))
+            _render(ten, story)
+
+        # Counts by segment table
         if grouping:
             all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys() for x in pol]))
             header = [grouping["display_name"]] + [x["display"] for x in pol] + ["Total"]
@@ -308,7 +340,8 @@ def build_pdf(active: dict) -> bytes:
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY2]),
                 ("GRID", (0, 0), (-1, -1), 0.5, GREY1),
             ]))
-            story += [Paragraph("Counts by segment", S["h2"]), Spacer(1, 0.15 * cm), tbl]
+            story += [Spacer(1, 0.4 * cm), Paragraph("Counts by segment", S["h2"]),
+                     Spacer(1, 0.15 * cm), tbl]
 
     doc.build(story)
     buf.seek(0)
