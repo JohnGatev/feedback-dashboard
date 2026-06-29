@@ -29,17 +29,49 @@ st.set_page_config(page_title="Feedback Dashboard", layout="wide", page_icon="�
 # --- Styling ---
 st.markdown("""
 <style>
+:root {
+  --brand-primary: #bc0031;
+  --brand-primary-hover: #9e0028;
+  --ink-900: #1B1918;
+  --ink-600: #5C5C5C;
+  --ink-400: #8A8A8A;
+  --surface-0: #FFFFFF;
+  --surface-1: #F4F5F7;
+  --surface-2: #FAFBFC;
+  --border: #E2E4E8;
+  --pos: #66bb6a;
+  --neg: #bc0031;
+  --success-bg: #EAF6EC;
+  --success-text: #2E7D3A;
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+}
+
 p, li, h1, h2, h3, h4, h5, h6, label,
 input[type="text"], textarea,
 [data-testid="stText"], [data-testid="stCaption"] {
     font-family: 'Source Sans 3', 'Source Sans Pro', Arial, sans-serif !important;
 }
+
+/* ── Container width ── */
+main, [data-testid="stMain"] {
+    max-width: 1200px !important; margin: 0 auto !important; padding: 0 32px !important;
+}
+
+/* ── Inputs ── */
 [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"],
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
-input[type="text"], textarea { border-radius: 4px !important; }
+input[type="text"], textarea { border-radius: var(--radius-input) !important; }
+[data-baseweb="input"]:focus-within, [data-baseweb="base-input"]:focus-within {
+    border-color: var(--brand-primary) !important;
+    box-shadow: 0 0 0 2px rgba(188,0,49,0.12) !important;
+}
+
+/* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-    background-color: #1B1918 !important;
-    border-right: 4px solid #bc0031 !important;
+    background-color: var(--ink-900) !important;
+    border-right: 4px solid var(--brand-primary) !important;
 }
 section[data-testid="stSidebar"] p,
 section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
@@ -50,54 +82,120 @@ section[data-testid="stSidebar"] [data-baseweb="select"] > div {
     background-color: #2c2827 !important; border-color: #A8A29F !important;
 }
 section[data-testid="stSidebar"] [data-baseweb="select"] * { color: #fff !important; }
-section[data-testid="stSidebar"] hr { border-color: #bc0031 !important; opacity: 0.6 !important; }
+section[data-testid="stSidebar"] hr { border-color: var(--brand-primary) !important; opacity: 0.6 !important; }
 section[data-testid="stSidebar"] .stFormSubmitButton > button,
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
-    background-color: #bc0031 !important; color: white !important; border: none !important;
+    background-color: var(--brand-primary) !important; color: white !important; border: none !important;
 }
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
     background-color: #2c2827 !important; border-color: #A8A29F !important;
 }
-h1 { color: #bc0031 !important; border-bottom: 3px solid #bc0031 !important;
+
+/* ── Headings ── */
+h1 { color: var(--brand-primary) !important; border-bottom: 3px solid var(--brand-primary) !important;
      padding-bottom: 8px !important; font-weight: 700 !important; }
-h2, h3 { color: #1B1918 !important; font-weight: 600 !important; }
-[data-testid="stMetricValue"] { color: #bc0031 !important; font-weight: 700 !important; }
-[data-testid="stMetric"] { border-left: 3px solid #bc0031 !important; padding-left: 10px !important; }
-.stButton > button { border: 2px solid #bc0031 !important; color: #bc0031 !important;
-                     font-weight: 600 !important; background-color: white !important; }
-.stButton > button:hover { background-color: #bc0031 !important; color: white !important; }
+h2, h3 { color: var(--ink-900) !important; font-weight: 600 !important; }
+
+/* ── Buttons ── */
+.stButton > button { border: 2px solid var(--brand-primary) !important; color: var(--brand-primary) !important;
+                     font-weight: 600 !important; background-color: var(--surface-0) !important;
+                     border-radius: var(--radius-input) !important; }
+.stButton > button:hover { background-color: var(--brand-primary) !important; color: white !important; }
 .stDownloadButton > button, .stFormSubmitButton > button {
-    background-color: #bc0031 !important; color: white !important; border: none !important;
-    font-weight: 600 !important;
+    background-color: var(--brand-primary) !important; color: white !important; border: none !important;
+    font-weight: 600 !important; border-radius: var(--radius-input) !important;
 }
-.stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #bc0031 !important; }
-.stTabs [data-baseweb="tab"] { font-weight: 600 !important; color: #1B1918 !important;
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid var(--border) !important; }
+.stTabs [data-baseweb="tab"] { font-weight: 600 !important; color: var(--ink-600) !important;
     border-bottom: 3px solid transparent !important; padding: 8px 16px !important; }
-.stTabs [aria-selected="true"] { color: #bc0031 !important;
-    border-bottom: 3px solid #bc0031 !important; }
-hr { border-color: #bc0031 !important; opacity: 0.35 !important; }
+.stTabs [aria-selected="true"] { color: var(--brand-primary) !important;
+    border-bottom: 3px solid var(--brand-primary) !important; }
+
+/* ── Misc ── */
+hr { border-color: var(--brand-primary) !important; opacity: 0.35 !important; }
 .stAlert { border-left-width: 4px !important; }
-.stDataFrame { border: 1px solid #D7D6D4 !important; }
+.stDataFrame { border: 1px solid var(--border) !important; }
 
-/* ── Start-page cards ── */
+/* ── Cards ── */
 .ui-card {
-    border: 1px solid #D7D6D4; border-radius: 8px; padding: 24px;
-    background: #fff; min-height: 200px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px;
+    background: var(--surface-2); min-height: 200px; box-shadow: var(--shadow-card);
 }
-.ui-card h3 { margin-top: 0 !important; color: #bc0031 !important; }
+.ui-card h3 { margin-top: 0 !important; color: var(--brand-primary) !important; }
+.kpi-card {
+    border: 1px solid var(--border); border-radius: var(--radius-card); padding: 20px;
+    background: var(--surface-2); box-shadow: var(--shadow-card); text-align: center;
+}
+.kpi-card .kpi-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    color: var(--ink-400); letter-spacing: 0.05em; }
+.kpi-card .kpi-value { font-size: 2.2rem; font-weight: 700; margin-top: 4px; }
+.chart-card {
+    border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px;
+    background: var(--surface-2); box-shadow: var(--shadow-card); margin-bottom: 16px;
+}
 
-/* ── Expander header consistency ── */
+/* ── Expander headers ── */
 details[data-testid="stExpander"] > summary > div > p {
     font-weight: 600 !important; font-size: 1rem !important;
 }
 
 /* ── Section caption inside expanders ── */
 .section-caption {
-    color: #6b6b6b; font-size: 0.85rem; line-height: 1.5;
+    color: var(--ink-600); font-size: 0.85rem; line-height: 1.5;
     margin-bottom: 12px; padding-bottom: 10px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border);
 }
+
+/* ── Stepper ── */
+.stepper {
+    display: flex; gap: 0; align-items: center; position: sticky; top: 0; z-index: 100;
+    background: var(--surface-0); padding: 10px 0; margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.stepper-step {
+    display: flex; align-items: center; gap: 6px; flex: 1; font-size: 0.78rem;
+    color: var(--ink-400); font-weight: 600;
+}
+.stepper-dot {
+    width: 24px; height: 24px; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700;
+    border: 2px solid var(--border); color: var(--ink-400); background: var(--surface-0);
+    flex-shrink: 0;
+}
+.stepper-dot.done { background: var(--brand-primary); border-color: var(--brand-primary); color: #fff; }
+.stepper-dot.active { border-color: var(--brand-primary); color: var(--brand-primary); }
+.stepper-line { flex: 0 0 16px; height: 2px; background: var(--border); }
+.stepper-line.done { background: var(--brand-primary); }
+
+/* ── Detected banner ── */
+.detected-banner {
+    background: var(--success-bg); color: var(--success-text); padding: 12px 16px;
+    border-radius: var(--radius-input); border-left: 3px solid var(--pos);
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+}
+.detected-banner .det-chip {
+    background: var(--surface-0); padding: 2px 10px; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 600; border: 1px solid var(--border);
+}
+
+/* ── Quote cards ── */
+.quote-card {
+    border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 16px;
+    background: var(--surface-2); box-shadow: var(--shadow-card); margin-bottom: 16px;
+    border-left: 3px solid var(--neg);
+}
+.quote-tag {
+    color: #fff; padding: 2px 8px; font-size: 0.7rem; font-weight: 700;
+    border-radius: var(--radius-input); text-transform: uppercase;
+}
+.quote-seg {
+    background: var(--surface-1); color: var(--ink-900); padding: 2px 8px;
+    font-size: 0.7rem; font-weight: 600; border-radius: 999px; margin-left: 6px;
+}
+.quote-aspect { color: var(--ink-400); font-size: 0.7rem; margin-left: 8px; }
+.quote-body { font-size: 0.9rem; color: var(--ink-900); line-height: 1.55; margin-top: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -204,6 +302,37 @@ def sort_segments(segs):
     return sorted(segs, key=key)
 
 
+def _stepper_html(steps):
+    """Render a sticky horizontal stepper. steps = [(num, label, done_bool), ...]"""
+    parts = ['<div class="stepper">']
+    for i, (num, label, done) in enumerate(steps):
+        cls = "done" if done else ""
+        icon = "&#10003;" if done else str(num)
+        parts.append(
+            f'<div class="stepper-step">'
+            f'<span class="stepper-dot {cls}">{icon}</span>'
+            f'<span style="color:{("#bc0031" if done else "#8A8A8A")};'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{label}</span>'
+            f'</div>')
+        if i < len(steps) - 1:
+            parts.append(f'<span class="stepper-line {"done" if done else ""}"></span>')
+    parts.append('</div>')
+    return "".join(parts)
+
+
+def _detected_banner(det):
+    """Render the detection result as a styled banner with chips."""
+    chips = [f"delimiter <code>{det['delimiter']}</code>",
+             f"{len(det['aspects'])} aspects"]
+    if det["grouping"]:
+        chips.append(f"grouping: <code>{det['grouping']['column']}</code>")
+    chip_html = "".join(f'<span class="det-chip">{c}</span>' for c in chips)
+    return (f'<div class="detected-banner">'
+            f'<span style="font-size:1.1rem;">&#10003;</span>'
+            f'<span style="font-weight:600;">Detected:</span>'
+            f'{chip_html}</div>')
+
+
 # --- PDF builder (defined before page dispatch so it is bound at call time) ---
 
 def build_pdf(active: dict) -> bytes:
@@ -227,6 +356,7 @@ def build_pdf(active: dict) -> bytes:
     pol = profile["polarity"]
     grouping = profile.get("grouping")
     seg_tmpl = grouping["label_template"] if grouping else "{g}"
+    seg_label = grouping["display_name"] if grouping else "All"
 
     buf = io.BytesIO()
     page_w, _ = A4
@@ -237,8 +367,10 @@ def build_pdf(active: dict) -> bytes:
                             title="Feedback Analysis")
     ACCENT = colors.HexColor("#bc0031")
     BLACK = colors.HexColor("#1B1918")
-    GREY1 = colors.HexColor("#D7D6D4")
-    GREY2 = colors.HexColor("#F5F5F3")
+    GREY1 = colors.HexColor("#E2E4E8")
+    GREY2 = colors.HexColor("#FAFBFC")
+    POS_C = colors.HexColor("#66bb6a")
+    NEG_C = colors.HexColor("#bc0031")
     ss = getSampleStyleSheet()
     S = {
         "h1": ParagraphStyle("h1", parent=ss["Heading1"], fontName="Helvetica-Bold",
@@ -247,12 +379,16 @@ def build_pdf(active: dict) -> bytes:
                              fontSize=13, spaceBefore=14, spaceAfter=6, textColor=BLACK),
         "h3": ParagraphStyle("h3", parent=ss["Heading3"], fontName="Helvetica-Bold",
                              fontSize=11, spaceBefore=10, spaceAfter=4, textColor=BLACK),
-        "body": ParagraphStyle("body", parent=ss["Normal"], fontName="Times-Roman",
+        "body": ParagraphStyle("body", parent=ss["Normal"], fontName="Helvetica",
                                fontSize=10, leading=15, spaceAfter=6, textColor=BLACK),
-        "bullet": ParagraphStyle("bul", parent=ss["Normal"], fontName="Times-Roman",
+        "bullet": ParagraphStyle("bul", parent=ss["Normal"], fontName="Helvetica",
                                  fontSize=10, leading=14, leftIndent=14, spaceAfter=3, textColor=BLACK),
         "cover_title": ParagraphStyle("ct", parent=ss["Title"], fontName="Helvetica-Bold",
                                       fontSize=28, alignment=0, spaceAfter=10, textColor=BLACK),
+        "kpi": ParagraphStyle("kpi", parent=ss["Normal"], fontName="Helvetica-Bold",
+                              fontSize=24, alignment=1, spaceBefore=6, spaceAfter=2),
+        "kpi_label": ParagraphStyle("kpil", parent=ss["Normal"], fontName="Helvetica",
+                                    fontSize=9, alignment=1, textColor=GREY1),
     }
 
     def _esc(t):
@@ -286,17 +422,163 @@ def build_pdf(active: dict) -> bytes:
         plt.close(fig); b.seek(0)
         return Image(b, width=w * cm, height=h * cm)
 
+    # ── Chart generation (matplotlib, matching on-screen Plotly styling) ──
+    _pol_colors = {x["display"]: x["color"] for x in pol}
+
+    def _chart_volume_by_aspect():
+        aspects = sorted({d["aspect"]["display_name"] for d in aspect_data.values()})
+        x = np.arange(len(aspects))
+        w = 0.35
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        for i, x_pol in enumerate(pol):
+            vals = [d["counts"].get(x_pol["key"] + "_comment_count", 0)
+                    for d in [aspect_data[k] for k in sorted(aspect_data)]]
+            ax.bar(x + (i - 0.5) * w, vals, w, label=x_pol["display"],
+                   color=_pol_colors[x_pol["display"]])
+        ax.set_xticks(x)
+        ax.set_xticklabels([a[:20] + "…" if len(a) > 20 else a for a in aspects],
+                           rotation=30, ha="right", fontsize=9)
+        ax.set_ylabel("Comments", fontsize=9)
+        ax.set_title("By aspect", fontsize=12, fontweight="bold", color="#1B1918")
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+        ax.legend(fontsize=9)
+        fig.tight_layout()
+        return _img(fig, 16, 7)
+
+    def _chart_volume_by_segment():
+        all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys()
+                                               for d in aspect_data.values() for x in pol]))
+        x = np.arange(len(all_segs))
+        w = 0.35
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        for i, x_pol in enumerate(pol):
+            vals = []
+            for seg in all_segs:
+                total = sum(d.get(f"{x_pol['key']}_by_segment", {}).get(seg, {})
+                            .get("comment_count", 0) for d in aspect_data.values())
+                vals.append(total)
+            ax.bar(x + (i - 0.5) * w, vals, w, label=x_pol["display"],
+                   color=_pol_colors[x_pol["display"]])
+        ax.set_xticks(x)
+        ax.set_xticklabels([seg_tmpl.format(g=s)[:15] for s in all_segs],
+                           rotation=30, ha="right", fontsize=9)
+        ax.set_ylabel("Comments", fontsize=9)
+        ax.set_title(f"By {seg_label}", fontsize=12, fontweight="bold", color="#1B1918")
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+        ax.legend(fontsize=9)
+        fig.tight_layout()
+        return _img(fig, 16, 7)
+
+    def _chart_positivity_ranking():
+        rows = []
+        for k, d in aspect_data.items():
+            display = d["aspect"]["display_name"]
+            counts = {x["key"]: d["counts"].get(x["key"] + "_comment_count", 0) for x in pol}
+            total = sum(counts.values())
+            pos_key = next((x["key"] for x in pol if x["key"] == "top"), pol[-1]["key"])
+            positivity = counts[pos_key] / total if total else 0
+            rows.append((display, positivity))
+        rows.sort(key=lambda r: r[1])
+        labels = [r[0][:25] + "…" if len(r[0]) > 25 else r[0] for r in rows]
+        vals = [r[1] for r in rows]
+        fig, ax = plt.subplots(figsize=(10, max(4, len(rows) * 0.6)))
+        colors_bar = []
+        for v in vals:
+            if v < 0.4:
+                colors_bar.append("#bc0031")
+            elif v < 0.6:
+                colors_bar.append("#f0ad4e")
+            else:
+                colors_bar.append("#66bb6a")
+        ax.barh(labels, vals, color=colors_bar)
+        for i, v in enumerate(vals):
+            ax.text(v + 0.01, i, f"{v:.0%}", va="center", fontsize=9, color="#1B1918")
+        ax.set_xlim(0, 1.15)
+        ax.set_xlabel("% Tops" if pol[1]["key"] == "top" else "% Positive", fontsize=9)
+        ax.set_title("Aspect ranking", fontsize=12, fontweight="bold", color="#1B1918")
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+        fig.tight_layout()
+        return _img(fig, 16, max(7, len(rows) * 0.9))
+
+    def _chart_positivity_heatmap():
+        all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys()
+                                               for d in aspect_data.values() for x in pol]))
+        aspects = sorted({d["aspect"]["display_name"] for d in aspect_data.values()})
+        pos_key = next((x["key"] for x in pol if x["key"] == "top"), pol[-1]["key"])
+        data = np.full((len(aspects), len(all_segs)), np.nan)
+        for ai, asp in enumerate(aspects):
+            for si, seg in enumerate(all_segs):
+                totals = {}
+                for x in pol:
+                    totals[x["key"]] = sum(
+                        d.get(f"{x['key']}_by_segment", {}).get(seg, {}).get("comment_count", 0)
+                        for d in aspect_data.values()
+                        if d["aspect"]["display_name"] == asp)
+                t = sum(totals.values())
+                if t:
+                    data[ai, si] = totals[pos_key] / t
+        fig, ax = plt.subplots(figsize=(10, max(4, len(aspects) * 0.7)))
+        from matplotlib.colors import LinearSegmentedColormap
+        cmap = LinearSegmentedColormap.from_list("ryg", ["#bc0031", "#f5f5dc", "#66bb6a"])
+        im = ax.imshow(data, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+        ax.set_xticks(range(len(all_segs)))
+        ax.set_xticklabels([seg_tmpl.format(g=s)[:12] for s in all_segs],
+                           rotation=30, ha="right", fontsize=8)
+        ax.set_yticks(range(len(aspects)))
+        ax.set_yticklabels([a[:20] + "…" if len(a) > 20 else a for a in aspects], fontsize=9)
+        for ai in range(len(aspects)):
+            for si in range(len(all_segs)):
+                if not np.isnan(data[ai, si]):
+                    ax.text(si, ai, f"{data[ai, si]:.0%}", ha="center", va="center",
+                            fontsize=8, color="#1B1918")
+        ax.set_title("Positivity — Aspect × Segment", fontsize=12, fontweight="bold", color="#1B1918")
+        fig.tight_layout()
+        return _img(fig, 16, max(7, len(aspects) * 1.1))
+
+    # ── Build KPI data for cover ──
+    _totals = {}
+    for x in pol:
+        _totals[x["key"]] = sum(d["counts"].get(x["key"] + "_comment_count", 0)
+                                for d in aspect_data.values())
+    _grand_total = sum(_totals.values())
+
     story = []
     # Cover
     red = Table([["  "]], colWidths=[content_w], rowHeights=[0.6 * cm])
     red.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT)]))
-    story += [red, Spacer(1, 4 * cm), Paragraph("Feedback Analysis", S["cover_title"])]
+    story += [red, Spacer(1, 3 * cm), Paragraph("Feedback Analysis", S["cover_title"])]
     if meta.get("filename"):
         story.append(Paragraph(_esc(meta.get("filename", "")),
-                               ParagraphStyle("cs", parent=ss["Normal"], fontSize=13, textColor=BLACK)))
+                               ParagraphStyle("cs", parent=ss["Normal"], fontName="Helvetica",
+                                              fontSize=13, textColor=BLACK)))
     if meta.get("date"):
         story.append(Paragraph(_esc(str(meta.get("date", ""))[:10]),
-                               ParagraphStyle("cd", parent=ss["Normal"], fontSize=9, textColor=GREY1)))
+                               ParagraphStyle("cd", parent=ss["Normal"], fontName="Helvetica",
+                                              fontSize=9, textColor=GREY1)))
+    # KPIs on cover
+    story.append(Spacer(1, 2 * cm))
+    kpi_cells = []
+    for x in pol:
+        c = "#bc0031" if x["key"] == "tip" else "#66bb6a"
+        kpi_cells.append(Paragraph(
+            f'<para alignment="center"><font color="#8A8A8A" size="9">{x["display"].upper()}</font><br/>'
+            f'<font color="{c}" size="24"><b>{_totals[x["key"]]}</b></font></para>',
+            ParagraphStyle("kpi_cell", parent=ss["Normal"], fontName="Helvetica",
+                           alignment=1, leading=30)))
+    kpi_cells.append(Paragraph(
+        f'<para alignment="center"><font color="#8A8A8A" size="9">TOTAL</font><br/>'
+        f'<font color="#1B1918" size="24"><b>{_grand_total}</b></font></para>',
+        ParagraphStyle("kpi_total", parent=ss["Normal"], fontName="Helvetica",
+                       alignment=1, leading=30)))
+    kpi_tbl = Table([kpi_cells], colWidths=[content_w / len(kpi_cells)] * len(kpi_cells))
+    kpi_tbl.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, GREY1),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, GREY1),
+        ("BACKGROUND", (0, 0), (-1, -1), GREY2),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    story.append(kpi_tbl)
     story.append(PageBreak())
 
     # Executive
@@ -323,7 +605,6 @@ def build_pdf(active: dict) -> bytes:
         story += [PageBreak(), Paragraph(_esc(display), S["h1"]),
                   HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
 
-        # Narrative sections (from md_sections, same lookup as Explore tab)
         secs = {sk.lower(): sv for sk, sv in md_sections.get(k, {}).items()}
         themes = next((secs[sk] for sk in ("summary", "integrated summary")
                        if sk in secs and secs[sk]), None)
@@ -341,7 +622,6 @@ def build_pdf(active: dict) -> bytes:
             story.append(Paragraph("Key tensions", S["h2"]))
             _render(ten, story)
 
-        # Counts by segment table
         if grouping:
             all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys() for x in pol]))
             header = [grouping["display_name"]] + [x["display"] for x in pol] + ["Total"]
@@ -354,7 +634,7 @@ def build_pdf(active: dict) -> bytes:
                 ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, -1), "Times-Roman"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("ALIGN", (1, 0), (-1, -1), "CENTER"),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY2]),
@@ -362,6 +642,46 @@ def build_pdf(active: dict) -> bytes:
             ]))
             story += [Spacer(1, 0.4 * cm), Paragraph("Counts by segment", S["h2"]),
                      Spacer(1, 0.15 * cm), tbl]
+
+    # Charts section
+    story += [PageBreak(), Paragraph("Charts", S["h1"]),
+              HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
+    story += [Paragraph("Volume", S["h2"]),
+              Spacer(1, 0.2 * cm), _chart_volume_by_aspect()]
+    if grouping:
+        story += [Spacer(1, 0.3 * cm), _chart_volume_by_segment()]
+    if len(pol) == 2:
+        story += [Spacer(1, 0.5 * cm), Paragraph("Positivity", S["h2"]),
+                  Spacer(1, 0.2 * cm), _chart_positivity_ranking()]
+        if grouping:
+            story += [Spacer(1, 0.3 * cm), _chart_positivity_heatmap()]
+
+    # Representative quotes
+    story += [PageBreak(), Paragraph("Representative Quotes", S["h1"]),
+              HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
+    for k in sorted(aspect_data):
+        d = aspect_data[k]
+        display = d["aspect"]["display_name"]
+        for x in pol:
+            seg_data = d.get(f"{x['key']}_by_segment", {})
+            for seg, sd in seg_data.items():
+                for c in sd.get("comments", [])[:3]:
+                    tag = x["display"].upper()
+                    tag_color = "#bc0031" if x["key"] == "tip" else "#66bb6a"
+                    seg_str = seg_tmpl.format(g=seg) if grouping else ""
+                    header_str = f'<font color="{tag_color}"><b>[{tag}]</b></font>'
+                    if seg_str:
+                        header_str += f' <font color="#8A8A8A">({seg_str})</font>'
+                    header_str += f' <font color="#8A8A8A">— {display}</font>'
+                    story.append(Paragraph(header_str,
+                                           ParagraphStyle("qtag", parent=ss["Normal"],
+                                                          fontName="Helvetica", fontSize=9,
+                                                          spaceBefore=8, spaceAfter=2)))
+                    story.append(Paragraph(f'"{_esc(c["text"])}"',
+                                           ParagraphStyle("qbody", parent=ss["Normal"],
+                                                          fontName="Helvetica", fontSize=10,
+                                                          leading=14, leftIndent=14,
+                                                          textColor=BLACK, spaceAfter=6)))
 
     doc.build(story)
     buf.seek(0)
@@ -513,9 +833,21 @@ elif page == "Run":
 
     csv_bytes = up.getvalue()
     det = detect(csv_bytes)
-    st.success(f"Detected: delimiter `{det['delimiter']}`, "
-               f"{len(det['aspects'])} aspects, "
-               f"grouping: {det['grouping']['column'] if det['grouping'] else 'none'}")
+    st.markdown(_detected_banner(det), unsafe_allow_html=True)
+
+    # ── Stepper (completion tracked via session_state for cross-rerun persistence) ──
+    _s = st.session_state
+    _stepper_steps = [
+        (1, "Upload",      up is not None),
+        (2, "Aspects",     len(det["aspects"]) > 0),
+        (3, "Grouping",    True),
+        (4, "Model",       bool(_s.get("fb_models"))),
+        (5, "Sections",    True),
+        (6, "Comparison",  True),
+        (7, "Executive",   True),
+        (8, "Run",         bool(_s.get("active"))),
+    ]
+    st.markdown(_stepper_html(_stepper_steps), unsafe_allow_html=True)
 
     # ── Step 2: Detected Aspects ──
     with st.expander('2 · Detected Aspects', expanded=True):
@@ -553,20 +885,23 @@ elif page == "Run":
                             help="Enable to split comments by a survey variable. "
                                  "Adds per-segment counts, differences, and a "
                                  "positivity heatmap to the output.")
+        g = det["grouping"] or {}
+        g["column"] = st.text_input(
+            "Grouping column code", g.get("column", ""),
+            disabled=not has_g,
+            help="The Qualtrics column ID (e.g. Q1_Team) that holds each "
+                 "respondent's segment value. Must match the CSV header code exactly.")
+        g["display_name"] = st.text_input(
+            "Display name", g.get("display_name", "Group"),
+            disabled=not has_g,
+            help="Human-readable label shown in charts, tables, and filters "
+                 "(e.g. 'Team').")
+        g["label_template"] = st.text_input(
+            "Label template", g.get("label_template", "Group {g}"),
+            disabled=not has_g,
+            help="How individual segment labels appear in the UI. {g} is replaced "
+                 "by each segment value, e.g. 'Team {g}' becomes 'Team PC&J'.")
         if has_g:
-            g = det["grouping"] or {}
-            g["column"] = st.text_input(
-                "Grouping column code", g.get("column", ""),
-                help="The Qualtrics column ID (e.g. Q1_Team) that holds each "
-                     "respondent's segment value. Must match the CSV header code exactly.")
-            g["display_name"] = st.text_input(
-                "Display name", g.get("display_name", "Group"),
-                help="Human-readable label shown in charts, tables, and filters "
-                     "(e.g. 'Team').")
-            g["label_template"] = st.text_input(
-                "Label template", g.get("label_template", "Group {g}"),
-                help="How individual segment labels appear in the UI. Use {g} for "
-                     "the value, e.g. 'Team {g}' becomes 'Team PC&J'.")
             det["grouping"] = g
         else:
             det["grouping"] = None
@@ -600,8 +935,10 @@ elif page == "Run":
         c_fetch, _ = st.columns([1, 4])
         with c_fetch:
             if st.button("Fetch available models",
+                         disabled=not (api_key and endpoint),
                          help="Query the endpoint for all models accessible "
-                              "with your API key."):
+                              "with your API key. Disabled until both API key "
+                              "and endpoint are provided."):
                 if not api_key or not endpoint:
                     st.error("Enter an API key and endpoint first.")
                 else:
@@ -626,18 +963,21 @@ elif page == "Run":
     # ── Step 5: Output Sections ──
     with st.expander('5 · Output Sections', expanded=True):
         st.markdown('<div class="section-caption">Toggle which structural sections '
-                    'each aspect summary contains. Group-only sections are hidden '
-                    'when grouping is disabled.</div>',
+                    'each aspect summary contains. Group-only sections are disabled '
+                    'when grouping is off.</div>',
                     unsafe_allow_html=True)
         if "fb_sections" not in st.session_state:
             st.session_state["fb_sections"] = {}
         secs = []
         for t in _SECTION_TOGGLES:
-            if t["key"] in _GROUP_ONLY_KEYS and det["grouping"] is None:
-                continue
-            default_on = t["key"] in _dp["output_sections"]
+            is_group_only = t["key"] in _GROUP_ONLY_KEYS
+            is_disabled = is_group_only and det["grouping"] is None
+            default_on = t["key"] in _dp["output_sections"] and not is_disabled
             cur = st.session_state["fb_sections"].get(t["key"], default_on)
-            on = st.toggle(t["label"], value=cur, help=t["help"], key=f"tog_{t['key']}")
+            label = t["label"] + (" (requires grouping)" if is_disabled else "")
+            on = st.toggle(label, value=cur and not is_disabled,
+                           help=t["help"], key=f"tog_{t['key']}",
+                           disabled=is_disabled)
             st.session_state["fb_sections"][t["key"]] = on
             if on:
                 secs.append(t["key"])
@@ -930,18 +1270,30 @@ elif page == "Explore":
         active_aspects = [sel_aspect] if sel_aspect != "All" else sorted(aspect_data.keys())
         active_segs = [sel_seg] if sel_seg != "All" else list(all_segs)
 
-    # Metrics
+    # Metrics — three KPI cards
     totals = {x["key"]: 0 for x in pol}
     for k in active_aspects:
         d = aspect_data[k]
         for seg in active_segs:
             for x in pol:
                 totals[x["key"]] += d.get(f"{x['key']}_by_segment", {}).get(seg, {}).get("comment_count", 0)
+    total = sum(totals.values())
+    _kpi_colors = {}
+    for x in pol:
+        _kpi_colors[x["key"]] = "#bc0031" if x["key"] == "tip" else "#66bb6a"
     mcols = st.columns(len(pol) + 1)
     for i, x in enumerate(pol):
-        mcols[i].metric(x["display"], totals[x["key"]])
-    total = sum(totals.values())
-    mcols[len(pol)].metric("Total comments", total)
+        with mcols[i]:
+            st.markdown(
+                f'<div class="kpi-card"><div class="kpi-label">{x["display"]}</div>'
+                f'<div class="kpi-value" style="color:{_kpi_colors[x["key"]]};">'
+                f'{totals[x["key"]]}</div></div>',
+                unsafe_allow_html=True)
+    with mcols[len(pol)]:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Total</div>'
+            f'<div class="kpi-value" style="color:#1B1918;">{total}</div></div>',
+            unsafe_allow_html=True)
 
     st.divider()
     st.subheader("Aspect summaries")
@@ -1002,19 +1354,16 @@ elif page == "Explore":
                     break
                 q = quotes[i + j]
                 with col:
-                    seg_badge = (f'<span style="background:#F5F5F3;color:#1B1918;padding:2px 8px;'
-                                 f'font-size:0.7rem;font-weight:600;margin-left:5px;">'
+                    seg_badge = (f'<span class="quote-seg">'
                                  f'{seg_tmpl.format(g=q["segment"])}</span>') if grouping else ""
+                    border_color = q["color"]
                     card = (
-                        f'<div style="border-left:3px solid {q["color"]};'
-                        f'border:1px solid #D7D6D4;padding:12px 14px;margin-bottom:8px;'
-                        f'background:#fff;min-height:110px;">'
-                        f'<div style="margin-bottom:8px;">'
-                        f'<span style="background:{q["color"]};color:#fff;padding:2px 8px;'
-                        f'font-size:0.7rem;font-weight:700;">{q["polarity"].upper()}</span>'
+                        f'<div class="quote-card" style="border-left:3px solid {border_color};">'
+                        f'<div><span class="quote-tag" style="background:{border_color};">'
+                        f'{q["polarity"].upper()}</span>'
                         f'{seg_badge}'
-                        f'<span style="color:#A8A29F;font-size:0.7rem;margin-left:8px;">{q["aspect"]}</span>'
-                        f'</div><div style="font-size:0.9rem;color:#1B1918;line-height:1.55;">'
+                        f'<span class="quote-aspect">{q["aspect"]}</span>'
+                        f'</div><div class="quote-body">'
                         f'&ldquo;{q["text"]}&rdquo;</div></div>'
                     )
                     st.markdown(card, unsafe_allow_html=True)
@@ -1066,25 +1415,32 @@ elif page == "Dashboard":
 
     df = pd.DataFrame(rows)
     cmap = {x["display"]: x["color"] for x in pol}
+    _PLOTLY_CFG = {"displayModeBar": "reduce"}
     c1, c2 = st.columns(2)
     with c1:
         if not df.empty:
-            fig = px.bar(df, x="Aspect", y="Count", color="Polarity", barmode="group",
-                         color_discrete_map=cmap, title="By aspect",
-                         labels={"Count": "Comments", "Aspect": ""})
-            fig.update_layout(xaxis_tickangle=-30, legend_title="", margin=dict(t=40, b=100),
-                              showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            with st.container():
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                fig = px.bar(df, x="Aspect", y="Count", color="Polarity", barmode="group",
+                             color_discrete_map=cmap, title="By aspect",
+                             labels={"Count": "Comments", "Aspect": ""})
+                fig.update_layout(xaxis_tickangle=-30, legend_title="", margin=dict(t=40, b=100),
+                                  showlegend=False)
+                st.plotly_chart(fig, use_container_width=True, config=_PLOTLY_CFG)
+                st.markdown('</div>', unsafe_allow_html=True)
     with c2:
         if grouping and ga_rows:
-            df_g = pd.DataFrame(ga_rows)
-            df_g_long = df_g.melt(id_vars="Segment", value_vars=[x["display"] for x in pol],
-                                  var_name="Polarity", value_name="Count")
-            fig2 = px.bar(df_g_long, x="Segment", y="Count", color="Polarity", barmode="group",
-                          color_discrete_map=cmap, title=f"By {seg_label}",
-                          labels={"Count": "Comments", "Segment": ""})
-            fig2.update_layout(legend_title="", margin=dict(t=40), showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
+            with st.container():
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                df_g = pd.DataFrame(ga_rows)
+                df_g_long = df_g.melt(id_vars="Segment", value_vars=[x["display"] for x in pol],
+                                      var_name="Polarity", value_name="Count")
+                fig2 = px.bar(df_g_long, x="Segment", y="Count", color="Polarity", barmode="group",
+                              color_discrete_map=cmap, title=f"By {seg_label}",
+                              labels={"Count": "Comments", "Segment": ""})
+                fig2.update_layout(legend_title="", margin=dict(t=40), showlegend=False)
+                st.plotly_chart(fig2, use_container_width=True, config=_PLOTLY_CFG)
+                st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
     st.subheader("Positivity")
@@ -1102,29 +1458,35 @@ elif page == "Dashboard":
         piv = piv.sort_values("Positivity")
         col3, col4 = st.columns(2)
         with col3:
-            fig3 = px.bar(piv, x="Positivity", y="Aspect", orientation="h", color="Positivity",
-                          color_continuous_scale="RdYlGn", range_color=[0, 1],
-                          title="Aspect ranking", labels={"Positivity": f"% {pos_key}", "Aspect": ""},
-                          text=piv["Positivity"])
-            fig3.update_traces(texttemplate="%{text:.2%}", textposition="outside")
-            fig3.update_xaxes(tickformat=".2%")
-            fig3.update_layout(coloraxis_showscale=False, margin=dict(t=40, b=20),
-                               showlegend=False)
-            st.plotly_chart(fig3, use_container_width=True)
+            with st.container():
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                fig3 = px.bar(piv, x="Positivity", y="Aspect", orientation="h", color="Positivity",
+                              color_continuous_scale="RdYlGn", range_color=[0, 1],
+                              title="Aspect ranking", labels={"Positivity": f"% {pos_key}", "Aspect": ""},
+                              text=piv["Positivity"])
+                fig3.update_traces(texttemplate="%{text:.2%}", textposition="outside")
+                fig3.update_xaxes(tickformat=".2%")
+                fig3.update_layout(coloraxis_showscale=False, margin=dict(t=40, b=20),
+                                   showlegend=False)
+                st.plotly_chart(fig3, use_container_width=True, config=_PLOTLY_CFG)
+                st.markdown('</div>', unsafe_allow_html=True)
         with col4:
             if grouping and ga_rows:
-                df_g = pd.DataFrame(ga_rows)
-                df_g["Total"] = df_g[pol[0]["display"]] + df_g[pol[1]["display"]]
-                df_g["Positivity"] = df_g[pos_key] / df_g["Total"].replace(0, pd.NA)
-                heat = df_g.pivot_table(index="Aspect", columns="Segment", values="Positivity")
-                n = len(heat)
-                fig4 = px.imshow(heat, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
-                                 text_auto=".2%", title="Positivity — Aspect × Segment")
-                fig4.update_layout(height=max(320, n * 55 + 80),
-                                   margin=dict(t=50, b=20, l=10, r=10),
-                                   coloraxis_showscale=False, xaxis=dict(side="bottom"))
-                fig4.update_xaxes(tickangle=-30)
-                st.plotly_chart(fig4, use_container_width=True)
+                with st.container():
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    df_g = pd.DataFrame(ga_rows)
+                    df_g["Total"] = df_g[pol[0]["display"]] + df_g[pol[1]["display"]]
+                    df_g["Positivity"] = df_g[pos_key] / df_g["Total"].replace(0, pd.NA)
+                    heat = df_g.pivot_table(index="Aspect", columns="Segment", values="Positivity")
+                    n = len(heat)
+                    fig4 = px.imshow(heat, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
+                                     text_auto=".2%", title="Positivity — Aspect × Segment")
+                    fig4.update_layout(height=max(320, n * 55 + 80),
+                                       margin=dict(t=50, b=20, l=10, r=10),
+                                       coloraxis_showscale=False, xaxis=dict(side="bottom"))
+                    fig4.update_xaxes(tickangle=-30)
+                    st.plotly_chart(fig4, use_container_width=True, config=_PLOTLY_CFG)
+                    st.markdown('</div>', unsafe_allow_html=True)
             else:
                 st.caption("Grouping not enabled for this analysis; heatmap skipped.")
 
