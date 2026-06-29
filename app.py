@@ -343,6 +343,31 @@ def _profile_editor(p: dict, pd_dir: str):
                     st.rerun()
 
 
+# --- Run-tab constants ---
+
+_SECTION_TOGGLES = [
+    {"key": "counts", "label": "Comment counts",
+     "help": "Show total Tips and Tops counts at the top of each aspect "
+             "summary. Drop this if you only want narrative."},
+    {"key": "group_counts_table", "label": "Per-segment counts table",
+     "help": "A markdown table breaking down comment counts by segment "
+             "(team/group). Only available when grouping is on."},
+    {"key": "group_differences", "label": "Segment differences",
+     "help": "A section characterising how segments differ in their comment "
+             "content, beyond just counts. Only when grouping is on."},
+    {"key": "integrated_summary", "label": "Integrated narrative summary",
+     "help": "The core 4-7 theme narrative, weighted by prevalence, "
+             "integrating Tips and Tops. The analytical heart of each aspect."},
+    {"key": "tensions", "label": "Key tensions / mixed signals",
+     "help": "Name the main within-aspect splits and which side has more "
+             "evidential support. Drop if you don't want conflict framing."},
+    {"key": "representative_quotes", "label": "Representative quotes",
+     "help": "Up to 6 verbatim quotes per polarity, leading with the dominant "
+             "pattern and including a minority voice. Drop for pure narrative."},
+]
+_GROUP_ONLY_KEYS = {"group_counts_table", "group_differences"}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1) SETUP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -533,130 +558,158 @@ elif page == "Run":
                        "“Fetch available models”.")
 
     # ── Analysis Instructions ──
+    _dp = default_profile()
+    _default_aspect_prompt = _dp["prompts"]["per_aspect_system"]
+    _default_exec_prompt = _dp["prompts"]["executive_system"]
+
     with st.expander("Analysis Instructions", expanded=True):
-        from profile import VALID_OUTPUT_SECTIONS
-        group_only = {"group_counts_table", "group_differences"}
-        if det["grouping"] is None:
-            avail_secs = [s for s in VALID_OUTPUT_SECTIONS if s not in group_only]
-            default_secs = [s for s in default_profile()["output_sections"]
-                            if s not in group_only]
+        # --- Output sections as toggles ---
+        st.subheader("Sections to include in each aspect summary")
+        st.caption("Toggle which structural sections each aspect summary contains. "
+                   "Group-only sections are hidden when grouping is disabled.")
+        if "fb_sections" not in st.session_state:
+            st.session_state["fb_sections"] = {}
+        secs = []
+        for t in _SECTION_TOGGLES:
+            if t["key"] in _GROUP_ONLY_KEYS and det["grouping"] is None:
+                continue
+            default_on = t["key"] in _dp["output_sections"]
+            cur = st.session_state["fb_sections"].get(t["key"], default_on)
+            on = st.toggle(t["label"], value=cur, help=t["help"], key=f"tog_{t['key']}")
+            st.session_state["fb_sections"][t["key"]] = on
+            if on:
+                secs.append(t["key"])
+
+        # --- Aspect comparison mode ---
+        st.markdown("---")
+        st.subheader("How should aspects be compared?")
+        mode = st.radio(
+            "Comparison mode",
+            ["Broad narrative (default)", "Custom focus"],
+            horizontal=True,
+            help="Broad uses the shipped analytical prompt (prevalence language, "
+                 "minority-view handling, grounding rules). Custom lets you add a "
+                 "focus directive in natural language that is appended to the default.",
+            label_visibility="collapsed")
+
+        with st.expander("View default aspect prompt", expanded=False):
+            st.text(_default_aspect_prompt)
+
+        if mode == "Broad narrative (default)":
+            pa = _default_aspect_prompt
+            st.caption("Using the default analytical prompt. Switch to Custom focus "
+                       "to add a specific comparison lens.")
         else:
-            avail_secs = list(VALID_OUTPUT_SECTIONS)
-            default_secs = list(default_profile()["output_sections"])
-        secs = st.multiselect("Sections to include in each aspect summary",
-                              avail_secs, default=default_secs,
-                              help="Which structural sections each aspect summary "
-                                   "must contain. Group-only sections are hidden "
-                                   "when grouping is disabled.")
+            st.caption("Describe what you want to compare in natural language. "
+                       "Click Generate to turn it into a focus directive that is "
+                       "appended to the default prompt. Edit the combined text below.")
+            focus_intent = st.text_area(
+                "What do you want to compare or analyze?", height=80,
+                placeholder="e.g. Compare how different teams perceive the formality "
+                           "of the meeting and whether it feels relevant to their role.")
+            if "fb_focus" not in st.session_state:
+                st.session_state["fb_focus"] = ""
+            c_gen, _ = st.columns([1, 4])
+            with c_gen:
+                if st.button("Generate focus directive"):
+                    if not api_key or not model_name:
+                        st.error("Enter an API key and select a model first.")
+                    elif not focus_intent.strip():
+                        st.error("Describe what you want to analyze first.")
+                    else:
+                        try:
+                            with st.spinner("Generating focus directive…"):
+                                tmp_prof = default_profile()
+                                tmp_prof["model"]["endpoint"] = endpoint
+                                tmp_prof["model"]["name"] = model_name
+                                st.session_state["fb_focus"] = \
+                                    pipeline.generate_prompt_from_description(
+                                        tmp_prof, focus_intent, api_key)
+                            st.success("Focus directive generated. Review below.")
+                        except Exception as e:
+                            st.error(f"Generation failed: {e}")
+            focus_text = st.session_state["fb_focus"]
+            if focus_text.strip():
+                pa = f"{_default_aspect_prompt}\n\n=== FOCUS FOR THIS ANALYSIS ===\n{focus_text}"
+            else:
+                pa = _default_aspect_prompt
+            pa = st.text_area(
+                "Per-aspect system prompt (default + focus, editable)",
+                value=pa, height=220,
+                help="The default analytical prompt with your focus directive "
+                     "appended. Edit freely. Structural sections (counts, tables, "
+                     "quotes) are appended automatically at run time based on the "
+                     "toggles above.")
 
-        st.markdown("---")
-        st.subheader("Global prompt")
-        st.caption("Describe in natural language what you want to compare or "
-                   "analyze across all aspects. Click Generate to turn it into "
-                   "a system prompt; edit the result before running. This prompt "
-                   "applies to every aspect unless overridden below.")
-        global_intent = st.text_area(
-            "What do you want to compare or analyze?", height=80,
-            placeholder="e.g. Compare how different teams perceive the formality "
-                       "of the meeting and whether it feels relevant to their role.")
-        if "fb_global_prompt" not in st.session_state:
-            st.session_state["fb_global_prompt"] = ""
-        c_gen_g, _ = st.columns([1, 4])
-        with c_gen_g:
-            if st.button("Generate global prompt"):
-                if not api_key or not model_name:
-                    st.error("Enter an API key and select a model first.")
-                elif not global_intent.strip():
-                    st.error("Describe what you want to analyze first.")
-                else:
-                    try:
-                        with st.spinner("Generating prompt…"):
-                            tmp_prof = default_profile()
-                            tmp_prof["model"]["endpoint"] = endpoint
-                            tmp_prof["model"]["name"] = model_name
-                            st.session_state["fb_global_prompt"] = \
-                                pipeline.generate_prompt_from_description(
-                                    tmp_prof, global_intent, api_key)
-                        st.success("Global prompt generated. Review and edit below.")
-                    except Exception as e:
-                        st.error(f"Generation failed: {e}")
-        pa = st.text_area("Global per-aspect system prompt",
-                          value=st.session_state["fb_global_prompt"], height=180,
-                          help="The generated or hand-written base prompt. "
-                               "Structural sections (counts, tables, quotes) are "
-                               "appended automatically at run time.")
-
-        st.markdown("---")
-        st.subheader("Per-aspect overrides")
-        st.caption("Optionally write a separate prompt for specific aspects. "
-                   "Leave blank to use the global prompt for that aspect.")
-        if "fb_overrides" not in st.session_state:
-            st.session_state["fb_overrides"] = {}
-        for a in det["aspects"]:
-            ak = a["aspect_key"]
-            label = a["display_label"]
-            with st.expander(f"Override for: {label}", expanded=False):
-                ov_intent = st.text_area(f"What should this aspect focus on?", height=60,
-                                         key=f"ovint_{ak}",
-                                         placeholder="Optional — leave blank to use the global prompt.")
-                cur = st.session_state["fb_overrides"].get(ak, "")
-                c_gen_o, _ = st.columns([1, 4])
-                with c_gen_o:
-                    if st.button(f"Generate", key=f"genov_{ak}"):
-                        if not api_key or not model_name:
-                            st.error("Enter an API key and select a model first.")
-                        elif not ov_intent.strip():
-                            st.error("Describe the focus for this aspect first.")
-                        else:
-                            try:
-                                with st.spinner("Generating…"):
-                                    tmp_prof = default_profile()
-                                    tmp_prof["model"]["endpoint"] = endpoint
-                                    tmp_prof["model"]["name"] = model_name
-                                    st.session_state["fb_overrides"][ak] = \
-                                        pipeline.generate_prompt_from_description(
-                                            tmp_prof, ov_intent, api_key, aspect_label=label)
-                                st.success("Override prompt generated.")
-                            except Exception as e:
-                                st.error(f"Generation failed: {e}")
-                ov = st.text_area(f"Override prompt for {label}",
-                                  value=cur, height=120, key=f"ovtxt_{ak}")
-                if ov.strip():
-                    st.session_state["fb_overrides"][ak] = ov
-                elif ak in st.session_state["fb_overrides"]:
-                    del st.session_state["fb_overrides"][ak]
+            # --- Scope the custom focus to specific aspects (optional) ---
+            if det["aspects"]:
+                st.markdown("**Apply custom focus to which aspects?**")
+                st.caption("Selected aspects use the prompt above. Unselected "
+                           "aspects fall back to the broad default. Leave all "
+                           "selected to apply it everywhere.")
+                aspect_labels = {a["aspect_key"]: a["display_label"] for a in det["aspects"]}
+                scoped_keys = st.multiselect(
+                    "Aspects with custom focus",
+                    options=list(aspect_labels.keys()),
+                    default=list(aspect_labels.keys()),
+                    format_func=lambda k: aspect_labels[k])
+                # Build overrides: aspects NOT in scope get the broad default.
+                if "fb_overrides" not in st.session_state:
+                    st.session_state["fb_overrides"] = {}
+                st.session_state["fb_overrides"] = {}
+                for a in det["aspects"]:
+                    if a["aspect_key"] not in scoped_keys:
+                        st.session_state["fb_overrides"][a["aspect_key"]] = _default_aspect_prompt
 
         st.markdown("---")
         st.subheader("Executive summary")
-        st.caption("Instructions for the model that synthesizes all aspect "
-                   "summaries into one document.")
-        exec_intent = st.text_area(
-            "What should the executive summary focus on?", height=70,
-            placeholder="e.g. Highlight cross-cutting findings and identify "
-                       "which aspects are robust vs tentative.")
-        if "fb_exec_prompt" not in st.session_state:
-            st.session_state["fb_exec_prompt"] = ""
-        c_gen_e, _ = st.columns([1, 4])
-        with c_gen_e:
-            if st.button("Generate executive prompt"):
-                if not api_key or not model_name:
-                    st.error("Enter an API key and select a model first.")
-                elif not exec_intent.strip():
-                    st.error("Describe the executive summary focus first.")
-                else:
-                    try:
-                        with st.spinner("Generating…"):
-                            tmp_prof = default_profile()
-                            tmp_prof["model"]["endpoint"] = endpoint
-                            tmp_prof["model"]["name"] = model_name
-                            st.session_state["fb_exec_prompt"] = \
-                                pipeline.generate_prompt_from_description(
-                                    tmp_prof, exec_intent, api_key)
-                        st.success("Executive prompt generated.")
-                    except Exception as e:
-                        st.error(f"Generation failed: {e}")
-        ex = st.text_area("Executive summary instructions",
-                          value=st.session_state["fb_exec_prompt"], height=160)
+        with st.expander("View default executive prompt", expanded=False):
+            st.text(_default_exec_prompt)
+        exec_mode = st.radio(
+            "Executive mode",
+            ["Default (two-part synthesis)", "Custom focus"],
+            horizontal=True,
+            label_visibility="collapsed")
+        if exec_mode == "Default (two-part synthesis)":
+            ex = _default_exec_prompt
+            st.caption("Using the default executive prompt: two-paragraph executive "
+                       "summary + per-aspect narrative prose, analytical register, "
+                       "no em dashes.")
+        else:
+            st.caption("Describe what the executive summary should focus on. "
+                       "The generated directive is appended to the default.")
+            exec_intent = st.text_area(
+                "What should the executive summary focus on?", height=70,
+                placeholder="e.g. Highlight cross-cutting findings and identify "
+                           "which aspects are robust vs tentative.")
+            if "fb_exec_focus" not in st.session_state:
+                st.session_state["fb_exec_focus"] = ""
+            c_gen_e, _ = st.columns([1, 4])
+            with c_gen_e:
+                if st.button("Generate executive focus"):
+                    if not api_key or not model_name:
+                        st.error("Enter an API key and select a model first.")
+                    elif not exec_intent.strip():
+                        st.error("Describe the executive summary focus first.")
+                    else:
+                        try:
+                            with st.spinner("Generating…"):
+                                tmp_prof = default_profile()
+                                tmp_prof["model"]["endpoint"] = endpoint
+                                tmp_prof["model"]["name"] = model_name
+                                st.session_state["fb_exec_focus"] = \
+                                    pipeline.generate_prompt_from_description(
+                                        tmp_prof, exec_intent, api_key)
+                            st.success("Executive focus generated. Review below.")
+                        except Exception as e:
+                            st.error(f"Generation failed: {e}")
+            exec_focus = st.session_state["fb_exec_focus"]
+            if exec_focus.strip():
+                ex = f"{_default_exec_prompt}\n\n=== FOCUS FOR THIS ANALYSIS ===\n{exec_focus}"
+            else:
+                ex = _default_exec_prompt
+            ex = st.text_area("Executive summary instructions (default + focus, editable)",
+                              value=ex, height=200)
 
     # ── Run ──
     st.divider()
