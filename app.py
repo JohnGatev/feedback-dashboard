@@ -453,6 +453,7 @@ elif page == "Run":
 
     # ── Detected Aspects ──
     with st.expander("Detected Aspects", expanded=True):
+        st.subheader("Detected Aspects")
         keep = []
         for i, a in enumerate(det["aspects"]):
             cols = st.columns([1, 9])
@@ -470,6 +471,7 @@ elif page == "Run":
 
     # ── Grouping ──
     with st.expander("Grouping", expanded=False):
+        st.subheader("Grouping")
         st.caption("Grouping splits comments by a survey variable (e.g. team, "
                    "tutorial group). When enabled, the analysis shows per-segment "
                    "counts, differences, and a heatmap. Leave disabled if your "
@@ -496,6 +498,7 @@ elif page == "Run":
 
     # ── Model & API key ──
     with st.expander("Model", expanded=True):
+        st.subheader("Model")
         api_key = st.text_input("API key", type="password",
                                 help="Your LLM proxy API key. Used to fetch "
                                      "available models and to run the analysis.")
@@ -553,7 +556,7 @@ elif page == "Run":
                 continue
             default_on = t["key"] in _dp["output_sections"]
             cur = st.session_state["fb_sections"].get(t["key"], default_on)
-            on = st.toggle(t["label"], value=cur, help=t["help"], key=f"tog_{t['key']}")
+            on = st.checkbox(t["label"], value=cur, help=t["help"], key=f"tog_{t['key']}")
             st.session_state["fb_sections"][t["key"]] = on
             if on:
                 secs.append(t["key"])
