@@ -724,15 +724,30 @@ elif page == "Run":
 
         msg = st.empty()
         msg.info("Step 1/3: Converting CSV to aspect JSONs...")
-        pipeline.csv_to_json(p, tmp_csv, json_out)
+        try:
+            pipeline.csv_to_json(p, tmp_csv, json_out)
+        except Exception as e:
+            st.error(f"Step 1 failed (CSV conversion): {e}")
+            shutil.rmtree(run_dir, ignore_errors=True)
+            st.stop()
 
         msg.info("Step 2/3: Generating aspect summaries (this can take a few minutes)...")
-        pipeline.generate_aspect_summaries(p, json_out, md_out, api_key,
-                                            base_dir=os.path.dirname(os.path.abspath(__file__)))
+        try:
+            pipeline.generate_aspect_summaries(p, json_out, md_out, api_key,
+                                                base_dir=os.path.dirname(os.path.abspath(__file__)))
+        except Exception as e:
+            st.error(f"Step 2 failed (aspect summaries). Network or API error: {e}")
+            shutil.rmtree(run_dir, ignore_errors=True)
+            st.stop()
 
         msg.info("Step 3/3: Generating executive summary...")
-        exe = os.path.join(run_dir, "Executive_Summary.md")
-        pipeline.generate_executive_summary(p, md_out, exe, api_key)
+        try:
+            exe = os.path.join(run_dir, "Executive_Summary.md")
+            pipeline.generate_executive_summary(p, md_out, exe, api_key)
+        except Exception as e:
+            st.error(f"Step 3 failed (executive summary). Network or API error: {e}")
+            shutil.rmtree(run_dir, ignore_errors=True)
+            st.stop()
 
         save_profile(p, os.path.join(run_dir, "profile.json"))
         shutil.copy(tmp_csv, os.path.join(run_dir, up.name))

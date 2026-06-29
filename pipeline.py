@@ -313,7 +313,12 @@ def _call_llm(profile: dict, system: str, user: str, api_key: str, timeout: int 
         "temperature": m.get("temperature", 0.3),
         "max_tokens": m.get("max_tokens", 32768),
     }
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    # Send both auth headers for LiteLLM proxy compatibility (matches fetch_models).
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "x-litellm-api-key": api_key,
+    }
     r = requests.post(m["endpoint"], headers=headers, json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
