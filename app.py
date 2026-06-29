@@ -78,6 +78,26 @@ h2, h3 { color: #1B1918 !important; font-weight: 600 !important; }
 hr { border-color: #bc0031 !important; opacity: 0.35 !important; }
 .stAlert { border-left-width: 4px !important; }
 .stDataFrame { border: 1px solid #D7D6D4 !important; }
+
+/* ── Start-page cards ── */
+.ui-card {
+    border: 1px solid #D7D6D4; border-radius: 8px; padding: 24px;
+    background: #fff; min-height: 200px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.ui-card h3 { margin-top: 0 !important; color: #bc0031 !important; }
+
+/* ── Expander header consistency ── */
+details[data-testid="stExpander"] > summary > div > p {
+    font-weight: 600 !important; font-size: 1rem !important;
+}
+
+/* ── Section caption inside expanders ── */
+.section-caption {
+    color: #6b6b6b; font-size: 0.85rem; line-height: 1.5;
+    margin-bottom: 12px; padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -378,7 +398,12 @@ _GROUP_ONLY_KEYS = {"group_counts_table", "group_differences"}
 st.sidebar.markdown(
     '<div style="font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px;">Feedback Dashboard</div>',
     unsafe_allow_html=True)
-page = st.sidebar.radio("Navigate", ["Start", "Run", "Explore", "Dashboard"])
+if "_nav" in st.session_state:
+    _nav_target = st.session_state.pop("_nav")
+    page = st.sidebar.radio("Navigate", ["Start", "Run", "Explore", "Dashboard"],
+                            index=["Start", "Run", "Explore", "Dashboard"].index(_nav_target))
+else:
+    page = st.sidebar.radio("Navigate", ["Start", "Run", "Explore", "Dashboard"])
 
 active = st.session_state.get("active")
 if active:
@@ -399,34 +424,63 @@ if active:
 # ─────────────────────────────────────────────────────────────────────────────
 if page == "Start":
     st.title("Start")
-    st.caption("Import a previously exported analysis package (.zip) to view it, "
-               "or go to Run to create a new analysis from a CSV.")
-    st.markdown("""
-**How it works**
+    st.caption("Import a previously exported analysis package to view it, "
+               "or create a new analysis from a Qualtrics CSV.")
 
-1. **Run** — upload a Qualtrics CSV, detect aspects, define your comparison, run the pipeline.
-2. **Explore** — filter summaries and quotes by aspect, polarity, and segment.
-3. **Dashboard** — charts, executive summary, PDF export.
-4. **Export** — download the finished analysis as a `.zip` package.
-5. **Share** — send the package to a colleague. They open this app, come here, and import it.
-
-Nothing is stored on a server. Each session lives in your browser; the only
-persistence is the `.zip` you export.
-""")
-    st.divider()
-    st.subheader("Import a package")
-    up = st.file_uploader("Analysis package (.zip)", type=["zip"])
-    if up is not None:
-        with st.spinner("Unpacking…"):
-            tmp = pkg.unpack_analysis(up.getvalue())
-            loaded = _load_analysis_from_dir(tmp)
-        if loaded and loaded["aspect_data"]:
-            st.session_state["active"] = loaded
-            st.success(f"Imported: {loaded['meta'].get('filename', up.name)}")
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.markdown("""
+        <div class="ui-card">
+            <h3>Create a new analysis</h3>
+            <p style="color:#6b6b6b;font-size:0.9rem;line-height:1.6;">
+            Upload a Qualtrics CSV, auto-detect aspects and grouping,
+            define your comparison, and run the analysis pipeline.
+            Nothing is saved — export the result as a .zip when done.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Go to Run →", use_container_width=True, key="goto_run"):
+            st.session_state["_nav"] = "Run"
             st.rerun()
-        else:
-            shutil.rmtree(tmp, ignore_errors=True)
-            st.error("No aspect data found in this package. Check the file.")
+    with col_r:
+        st.markdown("""
+        <div class="ui-card">
+            <h3>Import a package</h3>
+            <p style="color:#6b6b6b;font-size:0.9rem;line-height:1.6;">
+            Open a .zip exported from a previous analysis to view it
+            in Explore and Dashboard immediately.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        up = st.file_uploader("Analysis package (.zip)", type=["zip"],
+                              help="Select a .zip file exported from this app. "
+                                   "It contains all aspect JSONs, markdown summaries, "
+                                   "and the profile used to generate them.")
+        if up is not None:
+            with st.spinner("Unpacking…"):
+                tmp = pkg.unpack_analysis(up.getvalue())
+                loaded = _load_analysis_from_dir(tmp)
+            if loaded and loaded["aspect_data"]:
+                st.session_state["active"] = loaded
+                st.success(f"Imported: {loaded['meta'].get('filename', up.name)}")
+                st.rerun()
+            else:
+                shutil.rmtree(tmp, ignore_errors=True)
+                st.error("No aspect data found in this package. Check the file.")
+
+    st.divider()
+    st.markdown("""
+    <div style="color:#6b6b6b;font-size:0.85rem;line-height:1.7;">
+    <strong style="color:#1B1918;">How it works</strong><br>
+    1. <strong>Run</strong> — upload a Qualtrics CSV, detect aspects, define your comparison, run the pipeline.<br>
+    2. <strong>Explore</strong> — filter summaries and quotes by aspect, polarity, and segment.<br>
+    3. <strong>Dashboard</strong> — charts, executive summary, PDF export.<br>
+    4. <strong>Export</strong> — download the finished analysis as a .zip package.<br>
+    5. <strong>Share</strong> — send the package to a colleague. They open this app, come here, and import it.<br><br>
+    Nothing is stored on a server. Each session lives in your browser; the only persistence
+    is the .zip you export.
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -434,48 +488,71 @@ persistence is the `.zip` you export.
 # ─────────────────────────────────────────────────────────────────────────────
 elif page == "Run":
     st.title("Run an analysis")
-    st.caption("Upload a Qualtrics CSV. Aspects and grouping are auto-detected; "
-               "review them, define what you want to compare in natural language, "
-               "generate prompts, and run. Nothing is saved — export the result as "
-               "a package when done.")
+    st.caption("Upload a Qualtrics CSV, review the auto-detected structure, "
+               "configure the model and prompts, then run. Nothing is saved — "
+               "export the result as a .zip when done.")
 
-    up = st.file_uploader("Qualtrics CSV", type=["csv"])
+    _dp = default_profile()
+    _default_aspect_prompt = _dp["prompts"]["per_aspect_system"]
+    _default_exec_prompt = _dp["prompts"]["executive_system"]
+
+    # ── Step 1: Upload ──
+    with st.expander('1 · Upload CSV', expanded=True):
+        st.markdown('<div class="section-caption">Select a Qualtrics CSV export. '
+                    'The app auto-detects the delimiter, aspects, polarity, and '
+                    'grouping variable from the 3-row header.</div>',
+                    unsafe_allow_html=True)
+        up = st.file_uploader("Qualtrics CSV", type=["csv"],
+                              help="A Qualtrics CSV export with a 3-row header "
+                                   "(ImportId codes, question text, import labels). "
+                                   "Aspects, polarity, and grouping are detected "
+                                   "automatically from the header structure.")
     if up is None:
+        st.info("Select a CSV file above to begin.")
         st.stop()
 
-    # Read uploaded bytes once; pass in-memory to detect + pipeline.
     csv_bytes = up.getvalue()
-
     det = detect(csv_bytes)
     st.success(f"Detected: delimiter `{det['delimiter']}`, "
                f"{len(det['aspects'])} aspects, "
                f"grouping: {det['grouping']['column'] if det['grouping'] else 'none'}")
 
-    # ── Detected Aspects ──
-    with st.expander("Detected Aspects", expanded=True):
+    # ── Step 2: Detected Aspects ──
+    with st.expander('2 · Detected Aspects', expanded=True):
+        st.markdown('<div class="section-caption">Each row is one aspect auto-detected '
+                    'from the CSV. Untick to exclude an aspect; edit the label to '
+                    'change how it appears in summaries, charts, and the PDF.</div>',
+                    unsafe_allow_html=True)
         keep = []
         for i, a in enumerate(det["aspects"]):
             cols = st.columns([1, 9])
             with cols[0]:
-                inc = st.checkbox("", value=True, key=f"inc{i}")
+                inc = st.checkbox("", value=True, key=f"inc{i}",
+                                  help="Include this aspect in the analysis.")
             with cols[1]:
                 a["display_label"] = st.text_input(
                     "Label", value=a["display_label"].capitalize(), key=f"dl{i}",
-                    label_visibility="collapsed")
+                    label_visibility="collapsed",
+                    help="The human-readable name shown in summaries, charts, "
+                         "and the PDF report.")
             if inc:
                 keep.append(a)
         det["aspects"] = keep
         if not det["aspects"]:
             st.warning("No aspects selected. Tick at least one to run.")
 
-    # ── Grouping ──
-    with st.expander("Grouping", expanded=False):
-        st.caption("Grouping splits comments by a survey variable (e.g. team, "
-                   "tutorial group). When enabled, the analysis shows per-segment "
-                   "counts, differences, and a heatmap. Leave disabled if your "
-                   "survey has no such variable.")
+    # ── Step 3: Grouping ──
+    with st.expander('3 · Grouping', expanded=False):
+        st.markdown('<div class="section-caption">Grouping splits comments by a '
+                    'survey variable (e.g. team, tutorial group). When enabled, '
+                    'the analysis shows per-segment counts, differences, and a '
+                    'heatmap. Leave disabled if your survey has no such variable.</div>',
+                    unsafe_allow_html=True)
         has_g = st.checkbox("Use grouping/segment variable",
-                            value=det["grouping"] is not None)
+                            value=det["grouping"] is not None,
+                            help="Enable to split comments by a survey variable. "
+                                 "Adds per-segment counts, differences, and a "
+                                 "positivity heatmap to the output.")
         if has_g:
             g = det["grouping"] or {}
             g["column"] = st.text_input(
@@ -494,8 +571,12 @@ elif page == "Run":
         else:
             det["grouping"] = None
 
-    # ── Model & API key ──
-    with st.expander("Model", expanded=True):
+    # ── Step 4: Model & API Key ──
+    with st.expander('4 · Model & API Key', expanded=True):
+        st.markdown('<div class="section-caption">Enter your LLM proxy credentials, '
+                    'fetch the available models, and select one. The API key is '
+                    'used for both model discovery and the analysis run.</div>',
+                    unsafe_allow_html=True)
         api_key = st.text_input("API key", type="password",
                                 help="Your LLM proxy API key. Used to fetch "
                                      "available models and to run the analysis.")
@@ -505,9 +586,12 @@ elif page == "Run":
             "Custom…",
         ]
         endpoint_sel = st.selectbox("Endpoint", KNOWN_ENDPOINTS,
-                                    help="The chat-completions URL of your LLM proxy.")
+                                    help="The chat-completions URL of your LLM proxy. "
+                                         "Choose 'Custom…' to enter a different URL.")
         if endpoint_sel == "Custom…":
-            endpoint = st.text_input("Custom endpoint URL", "")
+            endpoint = st.text_input("Custom endpoint URL", "",
+                                     help="Full URL of the chat-completions endpoint, "
+                                          "e.g. https://my-proxy.example.com/v1/chat/completions")
         else:
             endpoint = endpoint_sel
 
@@ -515,7 +599,9 @@ elif page == "Run":
             st.session_state["fb_models"] = []
         c_fetch, _ = st.columns([1, 4])
         with c_fetch:
-            if st.button("Fetch available models"):
+            if st.button("Fetch available models",
+                         help="Query the endpoint for all models accessible "
+                              "with your API key."):
                 if not api_key or not endpoint:
                     st.error("Enter an API key and endpoint first.")
                 else:
@@ -529,22 +615,20 @@ elif page == "Run":
                                  f"Check your key and endpoint. ({e})")
         model_ids = st.session_state.get("fb_models", [])
         if model_ids:
-            model_name = st.selectbox("Model", model_ids)
+            model_name = st.selectbox("Model", model_ids,
+                                      help="The model to use for generating aspect "
+                                           "and executive summaries.")
         else:
             model_name = None
             st.caption("No models loaded yet. Enter your API key and click "
                        "“Fetch available models”.")
 
-    # ── Analysis Instructions ──
-    _dp = default_profile()
-    _default_aspect_prompt = _dp["prompts"]["per_aspect_system"]
-    _default_exec_prompt = _dp["prompts"]["executive_system"]
-
-    with st.expander("Analysis Instructions", expanded=True):
-        # --- Output sections as toggles ---
-        st.subheader("Sections to include in each aspect summary")
-        st.caption("Toggle which structural sections each aspect summary contains. "
-                   "Group-only sections are hidden when grouping is disabled.")
+    # ── Step 5: Output Sections ──
+    with st.expander('5 · Output Sections', expanded=True):
+        st.markdown('<div class="section-caption">Toggle which structural sections '
+                    'each aspect summary contains. Group-only sections are hidden '
+                    'when grouping is disabled.</div>',
+                    unsafe_allow_html=True)
         if "fb_sections" not in st.session_state:
             st.session_state["fb_sections"] = {}
         secs = []
@@ -558,9 +642,13 @@ elif page == "Run":
             if on:
                 secs.append(t["key"])
 
-        # --- Aspect comparison mode ---
-        st.markdown("---")
-        st.subheader("How should aspects be compared?")
+    # ── Step 6: Aspect Comparison ──
+    with st.expander('6 · Aspect Comparison', expanded=True):
+        st.markdown('<div class="section-caption">Choose how aspects are analysed. '
+                    'Broad narrative uses the shipped analytical prompt. Custom '
+                    'focus lets you add a comparison lens in natural language, '
+                    'appended to the default.</div>',
+                    unsafe_allow_html=True)
         mode = st.radio(
             "Comparison mode",
             ["Broad narrative (default)", "Custom focus"],
@@ -584,12 +672,17 @@ elif page == "Run":
             focus_intent = st.text_area(
                 "What do you want to compare or analyze?", height=80,
                 placeholder="e.g. Compare how different teams perceive the formality "
-                           "of the meeting and whether it feels relevant to their role.")
+                           "of the meeting and whether it feels relevant to their role.",
+                help="Describe your comparison goal in plain language. The LLM "
+                     "turns this into a structured focus directive.")
             if "fb_focus" not in st.session_state:
                 st.session_state["fb_focus"] = ""
             c_gen, _ = st.columns([1, 4])
             with c_gen:
-                if st.button("Generate focus directive"):
+                if st.button("Generate focus directive",
+                             help="Send your description to the LLM to produce "
+                                  "a structured focus directive appended to the "
+                                  "default prompt."):
                     if not api_key or not model_name:
                         st.error("Enter an API key and select a model first.")
                     elif not focus_intent.strip():
@@ -617,9 +710,8 @@ elif page == "Run":
                 help="The default analytical prompt with your focus directive "
                      "appended. Edit freely. Structural sections (counts, tables, "
                      "quotes) are appended automatically at run time based on the "
-                     "toggles above.")
+                     "toggles in Step 5.")
 
-            # --- Scope the custom focus to specific aspects (optional) ---
             if det["aspects"]:
                 st.markdown("**Apply custom focus to which aspects?**")
                 st.caption("Selected aspects use the prompt above. Unselected "
@@ -630,7 +722,9 @@ elif page == "Run":
                     "Aspects with custom focus",
                     options=list(aspect_labels.keys()),
                     default=list(aspect_labels.keys()),
-                    format_func=lambda k: aspect_labels[k])
+                    format_func=lambda k: aspect_labels[k],
+                    help="Aspects not selected here will use the default broad "
+                         "prompt instead of your custom focus.")
                 if "fb_overrides" not in st.session_state:
                     st.session_state["fb_overrides"] = {}
                 st.session_state["fb_overrides"] = {}
@@ -638,14 +732,22 @@ elif page == "Run":
                     if a["aspect_key"] not in scoped_keys:
                         st.session_state["fb_overrides"][a["aspect_key"]] = _default_aspect_prompt
 
-        st.markdown("---")
-        st.subheader("Executive summary")
+    # ── Step 7: Executive Summary ──
+    with st.expander('7 · Executive Summary', expanded=False):
+        st.markdown('<div class="section-caption">Configure the executive summary '
+                    'that synthesises all aspect summaries. Default produces a '
+                    'two-paragraph synthesis plus per-aspect narrative. Custom '
+                    'focus lets you steer the emphasis.</div>',
+                    unsafe_allow_html=True)
         with st.expander("View default executive prompt", expanded=False):
             st.text(_default_exec_prompt)
         exec_mode = st.radio(
             "Executive mode",
             ["Default (two-part synthesis)", "Custom focus"],
             horizontal=True,
+            help="Default produces a two-paragraph executive summary plus "
+                 "per-aspect narrative prose in an analytical register. "
+                 "Custom lets you add a focus directive appended to the default.",
             label_visibility="collapsed")
         if exec_mode == "Default (two-part synthesis)":
             ex = _default_exec_prompt
@@ -658,12 +760,16 @@ elif page == "Run":
             exec_intent = st.text_area(
                 "What should the executive summary focus on?", height=70,
                 placeholder="e.g. Highlight cross-cutting findings and identify "
-                           "which aspects are robust vs tentative.")
+                           "which aspects are robust vs tentative.",
+                help="Describe the executive summary emphasis in plain language. "
+                     "The LLM turns this into a structured directive.")
             if "fb_exec_focus" not in st.session_state:
                 st.session_state["fb_exec_focus"] = ""
             c_gen_e, _ = st.columns([1, 4])
             with c_gen_e:
-                if st.button("Generate executive focus"):
+                if st.button("Generate executive focus",
+                             help="Send your description to the LLM to produce "
+                                  "a structured executive focus directive."):
                     if not api_key or not model_name:
                         st.error("Enter an API key and select a model first.")
                     elif not exec_intent.strip():
@@ -686,78 +792,89 @@ elif page == "Run":
             else:
                 ex = _default_exec_prompt
             ex = st.text_area("Executive summary instructions (default + focus, editable)",
-                              value=ex, height=200)
+                              value=ex, height=200,
+                              help="The default executive prompt with your focus "
+                                   "directive appended. Edit freely.")
 
-    # ── Run ──
-    st.divider()
-    run_name = st.text_input("Name this analysis", value=up.name.replace(".csv", ""))
-    can_run = bool(det["aspects"] and api_key and model_name and endpoint
-                   and pa.strip() and ex.strip())
-    if not can_run:
-        st.caption("Complete the steps above (aspects, model, prompts) before running.")
-    if st.button("Run pipeline", type="primary", disabled=not can_run):
-        p = default_profile()
-        p["name"] = run_name
-        p["delimiter"] = det["delimiter"]
-        p["header_rows_to_skip"] = 2
-        p["grouping"] = det["grouping"]
-        p["polarity"] = det["polarity"]
-        p["aspects"] = det["aspects"]
-        p["output_sections"] = secs
-        p["prompts"]["per_aspect_system"] = pa
-        p["prompts"]["executive_system"] = ex
-        p["prompts"]["aspect_overrides"] = dict(st.session_state.get("fb_overrides", {}))
-        p["model"]["endpoint"] = endpoint
-        p["model"]["name"] = model_name
-        try:
-            validate(p)
-        except Exception as e:
-            st.error(f"Profile invalid: {e}")
-            st.stop()
+    # ── Step 8: Run ──
+    with st.expander('8 · Run Analysis', expanded=True):
+        st.markdown('<div class="section-caption">Name your analysis and run the '
+                    'pipeline. This converts the CSV to per-aspect JSONs, generates '
+                    'summaries via the LLM, and produces an executive summary. '
+                    'Export the result as a .zip when done.</div>',
+                    unsafe_allow_html=True)
+        run_name = st.text_input("Name this analysis", value=up.name.replace(".csv", ""),
+                                 help="A descriptive name for this run. Used in "
+                                      "the exported file name and meta data.")
+        can_run = bool(det["aspects"] and api_key and model_name and endpoint
+                       and pa.strip() and ex.strip())
+        if not can_run:
+            st.caption("Complete the steps above (aspects, model, prompts) before running.")
+        if st.button("Run pipeline", type="primary", disabled=not can_run,
+                     help="Run the full 3-stage pipeline: CSV → aspect JSONs → "
+                          "LLM summaries → executive summary."):
+            p = default_profile()
+            p["name"] = run_name
+            p["delimiter"] = det["delimiter"]
+            p["header_rows_to_skip"] = 2
+            p["grouping"] = det["grouping"]
+            p["polarity"] = det["polarity"]
+            p["aspects"] = det["aspects"]
+            p["output_sections"] = secs
+            p["prompts"]["per_aspect_system"] = pa
+            p["prompts"]["executive_system"] = ex
+            p["prompts"]["aspect_overrides"] = dict(st.session_state.get("fb_overrides", {}))
+            p["model"]["endpoint"] = endpoint
+            p["model"]["name"] = model_name
+            try:
+                validate(p)
+            except Exception as e:
+                st.error(f"Profile invalid: {e}")
+                st.stop()
 
-        run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + slugify(run_name)
-        run_dir = tempfile.mkdtemp(prefix="fbrun_")
-        json_out = os.path.join(run_dir, "JSON Outputs")
-        md_out = os.path.join(run_dir, "Markdown Summaries")
+            run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + slugify(run_name)
+            run_dir = tempfile.mkdtemp(prefix="fbrun_")
+            json_out = os.path.join(run_dir, "JSON Outputs")
+            md_out = os.path.join(run_dir, "Markdown Summaries")
 
-        msg = st.empty()
-        msg.info("Step 1/3: Converting CSV to aspect JSONs...")
-        try:
-            pipeline.csv_to_json(p, csv_bytes, json_out)
-        except Exception as e:
-            st.error(f"Step 1 failed (CSV conversion): {e}")
-            shutil.rmtree(run_dir, ignore_errors=True)
-            st.stop()
+            msg = st.empty()
+            msg.info("Step 1/3: Converting CSV to aspect JSONs...")
+            try:
+                pipeline.csv_to_json(p, csv_bytes, json_out)
+            except Exception as e:
+                st.error(f"Step 1 failed (CSV conversion): {e}")
+                shutil.rmtree(run_dir, ignore_errors=True)
+                st.stop()
 
-        msg.info("Step 2/3: Generating aspect summaries (this can take a few minutes)...")
-        try:
-            pipeline.generate_aspect_summaries(p, json_out, md_out, api_key,
-                                                base_dir=os.path.dirname(os.path.abspath(__file__)))
-        except Exception as e:
-            st.error(f"Step 2 failed (aspect summaries). Network or API error: {e}")
-            shutil.rmtree(run_dir, ignore_errors=True)
-            st.stop()
+            msg.info("Step 2/3: Generating aspect summaries (this can take a few minutes)...")
+            try:
+                pipeline.generate_aspect_summaries(p, json_out, md_out, api_key,
+                                                    base_dir=os.path.dirname(os.path.abspath(__file__)))
+            except Exception as e:
+                st.error(f"Step 2 failed (aspect summaries). Network or API error: {e}")
+                shutil.rmtree(run_dir, ignore_errors=True)
+                st.stop()
 
-        msg.info("Step 3/3: Generating executive summary...")
-        try:
-            exe = os.path.join(run_dir, "Executive_Summary.md")
-            pipeline.generate_executive_summary(p, md_out, exe, api_key)
-        except Exception as e:
-            st.error(f"Step 3 failed (executive summary). Network or API error: {e}")
-            shutil.rmtree(run_dir, ignore_errors=True)
-            st.stop()
+            msg.info("Step 3/3: Generating executive summary...")
+            try:
+                exe = os.path.join(run_dir, "Executive_Summary.md")
+                pipeline.generate_executive_summary(p, md_out, exe, api_key)
+            except Exception as e:
+                st.error(f"Step 3 failed (executive summary). Network or API error: {e}")
+                shutil.rmtree(run_dir, ignore_errors=True)
+                st.stop()
 
-        save_profile(p, os.path.join(run_dir, "profile.json"))
-        with open(os.path.join(run_dir, up.name), "wb") as f:
-            f.write(csv_bytes)
-        with open(os.path.join(run_dir, "meta.json"), "w") as f:
-            json.dump({"id": run_id, "filename": up.name,
-                       "timestamp": run_id, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                       "profile_name": p["name"]}, f, indent=2)
+            save_profile(p, os.path.join(run_dir, "profile.json"))
+            with open(os.path.join(run_dir, up.name), "wb") as f:
+                f.write(csv_bytes)
+            with open(os.path.join(run_dir, "meta.json"), "w") as f:
+                json.dump({"id": run_id, "filename": up.name,
+                           "timestamp": run_id, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                           "profile_name": p["name"]}, f, indent=2)
 
-        st.session_state["active"] = _load_analysis_from_dir(run_dir)
-        msg.success("Done. Go to Explore or Dashboard to view, or export the package below.")
-        st.rerun()
+            st.session_state["active"] = _load_analysis_from_dir(run_dir)
+            msg.success("Done. Go to Explore or Dashboard to view, or export the package below.")
+            st.rerun()
 
     # Export after a run
     if active and active.get("run_dir"):
@@ -801,10 +918,13 @@ elif page == "Explore":
     with st.sidebar:
         st.subheader("Filters")
         sel_aspect = st.selectbox("Aspect", ["All"] + sorted(aspect_data.keys()),
-                                  format_func=lambda k: _key_to_name.get(k, k))
-        sel_pol = st.selectbox("Polarity", ["All"] + [x["display"] for x in pol])
+                                  format_func=lambda k: _key_to_name.get(k, k),
+                                  help="Filter to a single aspect, or show all.")
+        sel_pol = st.selectbox("Polarity", ["All"] + [x["display"] for x in pol],
+                               help="Filter to Tips or Tops only, or show both.")
         if grouping:
-            sel_seg = st.selectbox(seg_label, ["All"] + sort_segments(all_segs))
+            sel_seg = st.selectbox(seg_label, ["All"] + sort_segments(all_segs),
+                                   help=f"Filter to a single {seg_label.lower()}, or show all.")
         else:
             sel_seg = "All"
         active_aspects = [sel_aspect] if sel_aspect != "All" else sorted(aspect_data.keys())
@@ -825,6 +945,8 @@ elif page == "Explore":
 
     st.divider()
     st.subheader("Aspect summaries")
+    st.caption("Narrative summaries for each aspect, tabbed by theme, segment "
+               "differences, and key tensions where available.")
     TAB_LOOKUP = {
         "Themes": None,
         "Segment differences": "segment differences",
@@ -854,6 +976,8 @@ elif page == "Explore":
 
     st.divider()
     st.subheader("Quote explorer")
+    st.caption("Verbatim quotes from the survey, filtered by aspect, polarity, "
+               "and segment. Coloured by polarity, tagged by segment.")
     quotes = []
     for k in active_aspects:
         d = aspect_data[k]
@@ -921,6 +1045,8 @@ elif page == "Dashboard":
 
     st.divider()
     st.subheader("Volume")
+    st.caption("Comment counts by aspect and polarity. When grouping is enabled, "
+               "a second chart breaks counts down by segment.")
     rows = []
     ga_rows = []
     for k, d in aspect_data.items():
@@ -962,6 +1088,9 @@ elif page == "Dashboard":
 
     st.divider()
     st.subheader("Positivity")
+    st.caption("Positive-comment share per aspect, ranked lowest to highest. "
+               "When grouping is enabled, a heatmap shows positivity by aspect "
+               "and segment.")
     if len(pol) == 2:
         piv = df.pivot_table(index="Aspect", columns="Polarity", values="Count", fill_value=0).reset_index()
         for x in pol:
@@ -1001,9 +1130,13 @@ elif page == "Dashboard":
 
     st.divider()
     st.subheader("Export")
+    st.caption("Download a PDF report with charts and narrative, or export the "
+               "full analysis as a .zip package for sharing.")
     col_e1, col_e2 = st.columns(2)
     with col_e1:
-        if st.button("Generate PDF report"):
+        if st.button("Generate PDF report",
+                     help="Build a PDF with volume charts, positivity ranking, "
+                          "and per-aspect narrative sections."):
             with st.spinner("Building PDF..."):
                 try:
                     pdf_bytes = build_pdf(active)
@@ -1014,7 +1147,9 @@ elif page == "Dashboard":
                 except Exception as e:
                     st.error(f"PDF failed: {e}")
     with col_e2:
-        if st.button("Export analysis package (.zip)"):
+        if st.button("Export analysis package (.zip)",
+                     help="Export all aspect JSONs, markdown summaries, profile, "
+                          "and meta as a .zip for sharing or archival."):
             rd = active.get("run_dir")
             if rd and os.path.isdir(rd):
                 z = pkg.export_analysis(rd)
