@@ -415,10 +415,8 @@ persistence is the `.zip` you export.
 """)
     st.divider()
     st.subheader("Import a package")
-    with st.form("import_form"):
-        up = st.file_uploader("Analysis package (.zip)", type=["zip"])
-        submitted = st.form_submit_button("Import package")
-    if submitted and up is not None:
+    up = st.file_uploader("Analysis package (.zip)", type=["zip"])
+    if up is not None:
         with st.spinner("Unpacking…"):
             tmp = pkg.unpack_analysis(up.getvalue())
             loaded = _load_analysis_from_dir(tmp)
@@ -441,11 +439,8 @@ elif page == "Run":
                "generate prompts, and run. Nothing is saved — export the result as "
                "a package when done.")
 
-    with st.form("csv_upload_form"):
-        up = st.file_uploader("Qualtrics CSV", type=["csv"])
-        submitted = st.form_submit_button("Upload CSV")
+    up = st.file_uploader("Qualtrics CSV", type=["csv"])
     if up is None:
-        st.info("Select a CSV file and click **Upload CSV** to begin.")
         st.stop()
 
     # Read uploaded bytes once; pass in-memory to detect + pipeline.
