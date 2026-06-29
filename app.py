@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import glob
 import io
 import json
 import os
 import re
 import shutil
-import zipfile
+import tempfile
 from datetime import datetime
 
 import pandas as pd
@@ -16,26 +17,16 @@ import package as pkg
 import pipeline
 from detect import detect
 from profile import (
-    analyses_dir,
     default_profile,
-    list_profiles,
     load as load_profile,
-    load_storage_config,
-    profiles_dir,
     save as save_profile,
-    save_storage_config,
     slugify,
     validate,
 )
 
 st.set_page_config(page_title="Feedback Dashboard", layout="wide", page_icon="📋")
 
-# --- Styling (generic, accent from profile) ---
-_ACCENT = "#bc0031"
-_ACCENT_DARK = "#1B1918"
-_GREY1 = "#D7D6D4"
-_GREY2 = "#F5F5F3"
-
+# --- Styling ---
 st.markdown("""
 <style>
 p, li, h1, h2, h3, h4, h5, h6, label,
@@ -91,91 +82,22 @@ hr { border-color: #bc0031 !important; opacity: 0.35 !important; }
 """, unsafe_allow_html=True)
 
 
-# --- Storage helpers ---
+# --- Session-state active analysis ---
+# st.session_state["active"] = {
+#   "meta": {id, filename, date, profile_name},
+#   "profile": <profile dict>,
+#   "aspect_data": {aspect_key: <JSON Outputs shape>},
+#   "md_sections": {aspect_key: {section: text}},
+#   "executive_md": <string>,
+#   "run_dir": <temp dir path or None>,   # kept only for in-session export
+# }
 
-def _is_cloud() -> bool:
-    """True when running on Streamlit Community Cloud (or any container without
-    a writable persistent home)."""
-    return os.environ.get("STREAMLIT_CLOUD") == "1" or \
-           os.path.isdir("/mount/src") or \
-           "streamlit" in (os.environ.get("HOSTNAME", "") + os.environ.get("HOME", "")).lower()
-
-
-def _session_working_dir() -> str:
-    """Per-browser-session scratch dir on Streamlit Cloud.
-
-    Each Streamlit browser session gets a unique key in session_state; we
-    isolate analyses/profiles under /tmp so concurrent users don't collide.
-    Nothing persists across container restarts, so users export packages to
-    keep results.
-    """
-    root = "/tmp/feedback-dashboard-sessions"
-    if "fb_session_key" not in st.session_state:
-        import uuid
-        st.session_state["fb_session_key"] = uuid.uuid4().hex[:8]
-    sd = os.path.join(root, st.session_state["fb_session_key"])
-    for sub in ("profiles", "analyses", "kb"):
-        os.makedirs(os.path.join(sd, sub), exist_ok=True)
-    return sd
-
-
-def _seed_kb(session_dir: str) -> None:
-    """Copy bundled KB files into a fresh session dir on cloud so profiles
-    that reference `kb/...` resolve."""
-    base_kb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb")
-    dest = os.path.join(session_dir, "kb")
-    if os.path.isdir(base_kb) and not os.listdir(dest):
-        for fn in os.listdir(base_kb):
-            shutil.copy(os.path.join(base_kb, fn), os.path.join(dest, fn))
-
-
-def get_working_dir() -> str | None:
-    if _is_cloud():
-        sd = _session_working_dir()
-        _seed_kb(sd)
-        return sd
-    cfg = load_storage_config()
-    wd = cfg.get("working_dir")
-    if wd and os.path.isdir(wd):
-        return wd
-    return None
-
-
-def set_working_dir(path: str) -> None:
-    if _is_cloud():
-        return  # ignored on cloud; session dir is fixed
-    os.makedirs(path, exist_ok=True)
-    for sub in ("profiles", "analyses", "kb"):
-        os.makedirs(os.path.join(path, sub), exist_ok=True)
-    save_storage_config({"working_dir": path})
-
-
-def get_past_analyses(wd: str) -> list[dict]:
-    out = []
-    ad = analyses_dir(wd)
-    if not os.path.isdir(ad):
-        return out
-    for d in os.listdir(ad):
-        dp = os.path.join(ad, d)
-        meta = os.path.join(dp, "meta.json")
-        if os.path.exists(meta):
-            with open(meta) as f:
-                out.append(json.load(f))
-    out.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    return out
-
-
-def analysis_path(wd: str, run_id: str) -> str:
-    return os.path.join(analyses_dir(wd), run_id)
-
-
-# --- Aspect/summary loading (generalized) ---
-
-def load_aspect_data(analysis: str) -> tuple[dict, dict]:
-    """Return (aspect_data, md_sections). aspect_data keyed by aspect_key."""
-    import glob
-    json_dir = os.path.join(analysis, "JSON Outputs")
-    md_dir = os.path.join(analysis, "Markdown Summaries")
+def _load_analysis_from_dir(analysis_dir: str) -> dict | None:
+    """Read a temp analysis dir into the session-state shape."""
+    json_dir = os.path.join(analysis_dir, "JSON Outputs")
+    md_dir = os.path.join(analysis_dir, "Markdown Summaries")
+    if not os.path.isdir(json_dir):
+        return None
     aspect_data = {}
     for f in glob.glob(os.path.join(json_dir, "*.json")):
         with open(f) as fh:
@@ -186,7 +108,31 @@ def load_aspect_data(analysis: str) -> tuple[dict, dict]:
         k = os.path.basename(f).replace("_summary.md", "")
         with open(f, encoding="utf-8") as fh:
             md_sections[k] = parse_md_sections(fh.read())
-    return aspect_data, md_sections
+    exe_path = os.path.join(analysis_dir, "Executive_Summary.md")
+    exec_md = ""
+    if os.path.exists(exe_path):
+        with open(exe_path, encoding="utf-8") as fh:
+            exec_md = fh.read()
+    meta = {}
+    mp = os.path.join(analysis_dir, "meta.json")
+    if os.path.exists(mp):
+        with open(mp) as fh:
+            meta = json.load(fh)
+    prof = None
+    pp = os.path.join(analysis_dir, "profile.json")
+    if os.path.exists(pp):
+        try:
+            prof = load_profile(pp)
+        except Exception:
+            prof = None
+    return {
+        "meta": meta,
+        "profile": prof or default_profile(),
+        "aspect_data": aspect_data,
+        "md_sections": md_sections,
+        "executive_md": exec_md,
+        "run_dir": analysis_dir,
+    }
 
 
 def parse_md_sections(md_text: str) -> dict:
@@ -227,120 +173,146 @@ def sort_segments(segs):
     return sorted(segs, key=key)
 
 
-def _profile_for_analysis(analysis: str) -> dict | None:
-    p = os.path.join(analysis, "profile.json")
-    if os.path.exists(p):
-        try:
-            return load_profile(p)
-        except Exception:
-            return None
-    return None
+# --- PDF builder (defined before page dispatch so it is bound at call time) ---
 
+def build_pdf(active: dict) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Image,
+                                    Table, TableStyle, PageBreak)
+    from reportlab.platypus.flowables import HRFlowable
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
 
-# --- Sidebar nav ---
+    profile = active["profile"]
+    aspect_data = active["aspect_data"]
+    meta = active.get("meta", {})
+    exec_md = active.get("executive_md", "")
+    pol = profile["polarity"]
+    grouping = profile.get("grouping")
+    seg_tmpl = grouping["label_template"] if grouping else "{g}"
 
-wd = get_working_dir()
-st.sidebar.markdown(
-    '<div style="font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px;">Feedback Dashboard</div>',
-    unsafe_allow_html=True)
-if wd:
-    st.sidebar.markdown(
-        f'<div style="font-size:0.8rem;color:#D7D6D4;margin-bottom:6px;">'
-        f'Storage: <code style="color:#fff;background:#2c2827;'
-        f'padding:1px 5px;border-radius:3px;">{wd}</code></div>',
-        unsafe_allow_html=True)
-    page = st.sidebar.radio("Navigate", ["Setup", "Profiles", "Run", "Explore", "Dashboard"])
-    analyses = get_past_analyses(wd)
-    selected_analysis = None
-    if analyses:
-        st.sidebar.divider()
-        st.sidebar.markdown("**Active analysis**")
-        res_list = [f"{a['id']} — {a.get('filename','')}" for a in analyses]
-        sel = st.sidebar.selectbox("Select", res_list, label_visibility="collapsed")
-        sel_id = sel.split(" — ")[0]
-        selected_analysis = analysis_path(wd, sel_id)
-else:
-    page = st.sidebar.radio("Navigate", ["Setup", "Profiles", "Run", "Explore", "Dashboard"])
+    buf = io.BytesIO()
+    page_w, _ = A4
+    margin = 2.5 * cm
+    content_w = page_w - 2 * margin
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=margin, rightMargin=margin,
+                            topMargin=2 * cm, bottomMargin=2.5 * cm,
+                            title="Feedback Analysis")
+    ACCENT = colors.HexColor("#bc0031")
+    BLACK = colors.HexColor("#1B1918")
+    GREY1 = colors.HexColor("#D7D6D4")
+    GREY2 = colors.HexColor("#F5F5F3")
+    ss = getSampleStyleSheet()
+    S = {
+        "h1": ParagraphStyle("h1", parent=ss["Heading1"], fontName="Helvetica-Bold",
+                             fontSize=20, spaceBefore=22, spaceAfter=10, textColor=ACCENT),
+        "h2": ParagraphStyle("h2", parent=ss["Heading2"], fontName="Helvetica-Bold",
+                             fontSize=13, spaceBefore=14, spaceAfter=6, textColor=BLACK),
+        "h3": ParagraphStyle("h3", parent=ss["Heading3"], fontName="Helvetica-Bold",
+                             fontSize=11, spaceBefore=10, spaceAfter=4, textColor=BLACK),
+        "body": ParagraphStyle("body", parent=ss["Normal"], fontName="Times-Roman",
+                               fontSize=10, leading=15, spaceAfter=6, textColor=BLACK),
+        "bullet": ParagraphStyle("bul", parent=ss["Normal"], fontName="Times-Roman",
+                                 fontSize=10, leading=14, leftIndent=14, spaceAfter=3, textColor=BLACK),
+        "cover_title": ParagraphStyle("ct", parent=ss["Title"], fontName="Helvetica-Bold",
+                                      fontSize=28, alignment=0, spaceAfter=10, textColor=BLACK),
+    }
 
+    def _esc(t):
+        for src, dst in {"—": "--", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
+                         "…": "...", "•": "-"}.items():
+            t = t.replace(src, dst)
+        t = "".join(c if ord(c) < 256 else "-" for c in t)
+        return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-# --- Profile editor (helper used by the Profiles page) ---
+    def _md(t):
+        t = _esc(t)
+        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+        t = re.sub(r"\*(.+?)\*", r"<i>\1</i>", t)
+        return t
 
-def _profile_editor(p: dict, pd_dir: str):
-    with st.expander(f"Edit: {p['name']}", expanded=True):
-        p["name"] = st.text_input("Profile name", p["name"])
-        p["delimiter"] = st.selectbox("Delimiter", ["auto", ",", ";"], index=["auto", ",", ";"].index(p["delimiter"]))
-        p["header_rows_to_skip"] = st.number_input("Header rows to skip", 0, 5, p["header_rows_to_skip"])
+    def _render(text, story):
+        for line in text.split("\n"):
+            s = line.strip()
+            if not s:
+                story.append(Spacer(1, 0.1 * cm)); continue
+            if s.startswith("- ") or s.startswith("* "):
+                story.append(Paragraph("• " + _md(s[2:]), S["bullet"]))
+            elif s.startswith("**") and s.endswith("**") and len(s) > 4:
+                story.append(Paragraph(_md(s), S["h3"]))
+            else:
+                story.append(Paragraph(_md(s), S["body"]))
 
-        st.markdown("**Grouping**")
-        has_group = st.checkbox("Use a grouping/segment variable", value=p["grouping"] is not None)
-        if has_group:
-            g = p["grouping"] or {}
-            g["column"] = st.text_input("Grouping column code (e.g. Q1_Team)", g.get("column", ""))
-            g["display_name"] = st.text_input("Group display name", g.get("display_name", "Group"))
-            g["label_template"] = st.text_input("Label template (use {g})", g.get("label_template", "Group {g}"))
-            p["grouping"] = g
-        else:
-            p["grouping"] = None
+    def _img(fig, w, h):
+        b = io.BytesIO()
+        fig.savefig(b, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+        plt.close(fig); b.seek(0)
+        return Image(b, width=w * cm, height=h * cm)
 
-        st.markdown("**Polarity**")
-        for i, pol in enumerate(p["polarity"]):
-            with st.container():
-                pol["key"] = st.selectbox(f"Polarity {i+1} key", ["tip", "top"], index=["tip","top"].index(pol["key"]), key=f"polk{i}")
-                pol["display"] = st.text_input(f"Display", pol["display"], key=f"pold{i}")
-                pol["selection_column"] = st.text_input(f"Selection column", pol["selection_column"], key=f"pols{i}")
-                pol["color"] = st.text_input(f"Color", pol["color"], key=f"polc{i}")
-                pol["explain_prefix"] = st.text_input(f"Explain column prefix", pol["explain_prefix"], key=f"polp{i}")
+    story = []
+    # Cover
+    red = Table([["  "]], colWidths=[content_w], rowHeights=[0.6 * cm])
+    red.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT)]))
+    story += [red, Spacer(1, 4 * cm), Paragraph("Feedback Analysis", S["cover_title"])]
+    if meta.get("filename"):
+        story.append(Paragraph(_esc(meta.get("filename", "")),
+                               ParagraphStyle("cs", parent=ss["Normal"], fontSize=13, textColor=BLACK)))
+    if meta.get("date"):
+        story.append(Paragraph(_esc(str(meta.get("date", ""))[:10]),
+                               ParagraphStyle("cd", parent=ss["Normal"], fontSize=9, textColor=GREY1)))
+    story.append(PageBreak())
 
-        st.markdown("**Aspects**")
-        for i, a in enumerate(p["aspects"]):
-            with st.container():
-                a["display_label"] = st.text_input(f"Aspect {i+1} label", a["display_label"], key=f"al{i}")
-                a["aspect_key"] = st.text_input(f"Key", a["aspect_key"], key=f"ak{i}")
-                for pk in [pol["key"] for pol in p["polarity"]]:
-                    a["columns"][pk] = st.text_input(f"Column ({pk})", a["columns"].get(pk, ""), key=f"ac{i}_{pk}")
+    # Executive
+    if exec_md:
+        em = re.sub(r"\n\|[^\n]+", "", exec_md)
+        story += [Paragraph("Executive Summary", S["h1"]),
+                  HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
+        for line in em.split("\n"):
+            s = line.strip()
+            if not s or s.startswith("|") or s.startswith("---"):
+                continue
+            if s.startswith("## "):
+                story.append(Paragraph(_md(s[3:]), S["h2"]))
+            elif s.startswith("### "):
+                story.append(Paragraph(_md(s[4:]), S["h3"]))
+            else:
+                story.append(Paragraph(_md(s), S["body"]))
+    story.append(PageBreak())
 
-        st.markdown("**Output sections**")
-        from profile import VALID_OUTPUT_SECTIONS
-        group_only = {"group_counts_table", "group_differences"}
-        if p["grouping"] is None:
-            avail_secs = [s for s in VALID_OUTPUT_SECTIONS if s not in group_only]
-            default_secs = [s for s in p.get("output_sections", []) if s not in group_only]
-        else:
-            avail_secs = list(VALID_OUTPUT_SECTIONS)
-            default_secs = list(p.get("output_sections", []))
-        secs = st.multiselect("Sections to include", avail_secs, default=default_secs)
-        p["output_sections"] = secs
+    # Per-aspect
+    for k in sorted(aspect_data):
+        d = aspect_data[k]
+        display = d["aspect"]["display_name"]
+        story += [PageBreak(), Paragraph(_esc(display), S["h1"]),
+                  HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
+        if grouping:
+            all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys() for x in pol]))
+            header = [grouping["display_name"]] + [x["display"] for x in pol] + ["Total"]
+            rows_t = []
+            for seg in all_segs:
+                vals = [d.get(f"{x['key']}_by_segment", {}).get(seg, {}).get("comment_count", 0) for x in pol]
+                rows_t.append([seg_tmpl.format(g=seg)] + [str(v) for v in vals] + [str(sum(vals))])
+            tbl = Table([header] + rows_t, colWidths=[5 * cm] + [2.5 * cm] * (len(pol) + 1))
+            tbl.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Times-Roman"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY2]),
+                ("GRID", (0, 0), (-1, -1), 0.5, GREY1),
+            ]))
+            story += [Paragraph("Counts by segment", S["h2"]), Spacer(1, 0.15 * cm), tbl]
 
-        st.markdown("**Prompts**")
-        p["prompts"]["per_aspect_system"] = st.text_area(
-            "Per-aspect system prompt (base; structural sections are appended automatically)",
-            p["prompts"]["per_aspect_system"], height=180)
-        p["prompts"]["executive_system"] = st.text_area(
-            "Executive summary system prompt",
-            p["prompts"]["executive_system"], height=180)
-
-        st.markdown("**Model**")
-        p["model"]["endpoint"] = st.text_input("LLM endpoint", p["model"]["endpoint"])
-        p["model"]["name"] = st.text_input("Model name", p["model"]["name"])
-        p["model"]["temperature"] = st.slider("Temperature", 0.0, 1.0, p["model"].get("temperature", 0.3))
-
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            if st.button("Save profile", type="primary"):
-                try:
-                    validate(p)
-                    save_profile(p, os.path.join(pd_dir, f"{slugify(p['name'])}.json"))
-                    st.success("Saved.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Validation error: {e}")
-        with c2:
-            if st.button("Delete profile"):
-                fp = os.path.join(pd_dir, f"{slugify(p['name'])}.json")
-                if os.path.exists(fp):
-                    os.remove(fp)
-                    st.success("Deleted.")
-                    st.rerun()
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 # --- Run-tab constants ---
@@ -368,102 +340,78 @@ _SECTION_TOGGLES = [
 _GROUP_ONLY_KEYS = {"group_counts_table", "group_differences"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1) SETUP
-# ─────────────────────────────────────────────────────────────────────────────
-if page == "Setup":
-    st.title("Setup")
-    if _is_cloud():
-        st.caption("Running on Streamlit Cloud. Each browser session gets an "
-                   "isolated scratch folder. Nothing persists across restarts, "
-                   "so **export your analyses as packages** to keep results.")
-        st.success(f"Session storage: `{wd}`")
-        st.info("Tip: use **Import a shared package** below to load a colleague's "
-                "analysis, and **Export → package (.zip)** on the Dashboard tab "
-                "to save or share your own.")
-    else:
-        st.caption("Choose a folder on your device where profiles, analyses, and "
-                   "knowledge-base files will be stored. Nothing is uploaded; all "
-                   "data stays local.")
-        cur = wd
-        if cur:
-            st.success(f"Current working directory: `{cur}`")
-        picked = st.text_input("Working directory path", value=cur or os.path.expanduser("~/feedback-dashboard"))
-        if st.button("Set working directory", use_container_width=False):
-            try:
-                abs_p = os.path.abspath(os.path.expanduser(picked))
-                set_working_dir(abs_p)
-                st.success(f"Set: `{abs_p}`")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Could not set directory: {e}")
-    st.divider()
-    st.subheader("Import a shared package")
-    up = st.file_uploader("Analysis package (.zip) or profile (.json)", type=["zip", "json"])
-    if up and wd:
-        if up.name.endswith(".zip"):
-            target = pkg.import_analysis(up.getvalue(), wd, name_hint=up.name)
-            st.success(f"Imported analysis → `{target}`")
-        else:
-            path = pkg.import_profile(up.getvalue(), wd)
-            st.success(f"Imported profile → `{path}`")
+# --- Sidebar nav ---
+
+st.sidebar.markdown(
+    '<div style="font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px;">Feedback Dashboard</div>',
+    unsafe_allow_html=True)
+page = st.sidebar.radio("Navigate", ["Start", "Run", "Explore", "Dashboard"])
+
+active = st.session_state.get("active")
+if active:
+    st.sidebar.divider()
+    st.sidebar.markdown("**Active analysis**")
+    m = active.get("meta", {})
+    st.sidebar.caption(f"{m.get('filename', '—')} · {str(m.get('date', ''))[:10]}")
+    if st.sidebar.button("Clear", use_container_width=True):
+        rd = active.get("run_dir")
+        if rd and os.path.isdir(rd) and rd.startswith(tempfile.gettempdir()):
+            shutil.rmtree(rd, ignore_errors=True)
+        st.session_state.pop("active", None)
         st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2) PROFILES
+# 1) START
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "Profiles":
-    st.title("Survey Profiles")
-    st.caption("A profile describes one survey shape: aspects, grouping, prompts, "
-               "and output sections. Edit one to customize the analysis.")
-    if not wd:
-        st.warning("Set a working directory in Setup first.")
-        st.stop()
+if page == "Start":
+    st.title("Start")
+    st.caption("Import a previously exported analysis package (.zip) to view it, "
+               "or go to Run to create a new analysis from a CSV.")
+    st.markdown("""
+**How it works**
 
-    pd_dir = profiles_dir(wd)
-    pros = list_profiles(wd)
-    st.subheader("Saved profiles")
-    if pros:
-        names = [p["name"] for p in pros]
-        sel = st.selectbox("Open profile", ["— pick —"] + names)
-        if sel != "— pick —":
-            p = next(x for x in pros if x["name"] == sel)
-            _profile_editor(p, pd_dir)
-    else:
-        st.info("No profiles yet. Create one from a CSV in the Run tab, or import one in Setup.")
+1. **Run** — upload a Qualtrics CSV, detect aspects, define your comparison, run the pipeline.
+2. **Explore** — filter summaries and quotes by aspect, polarity, and segment.
+3. **Dashboard** — charts, executive summary, PDF export.
+4. **Export** — download the finished analysis as a `.zip` package.
+5. **Share** — send the package to a colleague. They open this app, come here, and import it.
 
+Nothing is stored on a server. Each session lives in your browser; the only
+persistence is the `.zip` you export.
+""")
     st.divider()
-    st.subheader("Export current profile")
-    if pros:
-        exp = st.selectbox("Profile to export", names if pros else [])
-        if st.button("Download profile JSON"):
-            p = next(x for x in pros if x["name"] == exp)
-            st.download_button("Download", pkg.export_profile(p),
-                               file_name=f"{slugify(p['name'])}.json",
-                               mime="application/json")
-    else:
-        st.caption("No profiles to export.")
+    st.subheader("Import a package")
+    up = st.file_uploader("Analysis package (.zip)", type=["zip"])
+    if up is not None:
+        with st.spinner("Unpacking…"):
+            tmp = pkg.unpack_analysis(up.getvalue())
+            loaded = _load_analysis_from_dir(tmp)
+        if loaded and loaded["aspect_data"]:
+            st.session_state["active"] = loaded
+            st.success(f"Imported: {loaded['meta'].get('filename', up.name)}")
+            st.rerun()
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+            st.error("No aspect data found in this package. Check the file.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) RUN
+# 2) RUN
 # ─────────────────────────────────────────────────────────────────────────────
 elif page == "Run":
     st.title("Run an analysis")
     st.caption("Upload a Qualtrics CSV. Aspects and grouping are auto-detected; "
                "review them, define what you want to compare in natural language, "
-               "generate prompts, and run.")
-    if not wd:
-        st.warning("Set a working directory in Setup first.")
-        st.stop()
+               "generate prompts, and run. Nothing is saved — export the result as "
+               "a package when done.")
 
     up = st.file_uploader("Qualtrics CSV", type=["csv"])
     if up is None:
         st.stop()
 
     # Persist upload to a temp path for detection
-    tmp_csv = os.path.join(wd, "_upload.csv")
+    tmp_csv = os.path.join(tempfile.gettempdir(), f"fb_{up.name}")
     with open(tmp_csv, "wb") as f:
         f.write(up.getvalue())
 
@@ -532,7 +480,6 @@ elif page == "Run":
         else:
             endpoint = endpoint_sel
 
-        model_ids: list[str] = []
         if "fb_models" not in st.session_state:
             st.session_state["fb_models"] = []
         c_fetch, _ = st.columns([1, 4])
@@ -653,7 +600,6 @@ elif page == "Run":
                     options=list(aspect_labels.keys()),
                     default=list(aspect_labels.keys()),
                     format_func=lambda k: aspect_labels[k])
-                # Build overrides: aspects NOT in scope get the broad default.
                 if "fb_overrides" not in st.session_state:
                     st.session_state["fb_overrides"] = {}
                 st.session_state["fb_overrides"] = {}
@@ -739,8 +685,7 @@ elif page == "Run":
             st.stop()
 
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + slugify(run_name)
-        run_dir = os.path.join(analyses_dir(wd), run_id)
-        os.makedirs(run_dir, exist_ok=True)
+        run_dir = tempfile.mkdtemp(prefix="fbrun_")
         json_out = os.path.join(run_dir, "JSON Outputs")
         md_out = os.path.join(run_dir, "Markdown Summaries")
 
@@ -749,7 +694,8 @@ elif page == "Run":
         pipeline.csv_to_json(p, tmp_csv, json_out)
 
         msg.info("Step 2/3: Generating aspect summaries (this can take a few minutes)...")
-        pipeline.generate_aspect_summaries(p, json_out, md_out, api_key, base_dir=wd)
+        pipeline.generate_aspect_summaries(p, json_out, md_out, api_key,
+                                            base_dir=os.path.dirname(os.path.abspath(__file__)))
 
         msg.info("Step 3/3: Generating executive summary...")
         exe = os.path.join(run_dir, "Executive_Summary.md")
@@ -761,20 +707,34 @@ elif page == "Run":
             json.dump({"id": run_id, "filename": up.name,
                        "timestamp": run_id, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                        "profile_name": p["name"]}, f, indent=2)
-        msg.success("Done.")
+
+        st.session_state["active"] = _load_analysis_from_dir(run_dir)
+        msg.success("Done. Go to Explore or Dashboard to view, or export the package below.")
         st.rerun()
+
+    # Export after a run
+    if active and active.get("run_dir"):
+        st.divider()
+        st.subheader("Export")
+        if st.button("Export analysis package (.zip)"):
+            z = pkg.export_analysis(active["run_dir"])
+            fn = active.get("meta", {}).get("filename", "analysis").replace(".csv", "")
+            st.download_button("Download package", z,
+                               file_name=f"{slugify(fn)}.zip",
+                               mime="application/zip")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) EXPLORE
+# 3) EXPLORE
 # ─────────────────────────────────────────────────────────────────────────────
 elif page == "Explore":
     st.title("Feedback Explorer")
-    if not selected_analysis:
-        st.warning("No analysis selected. Run one or pick one in the sidebar.")
+    if not active:
+        st.warning("No analysis loaded. Run one or import a package on the Start page.")
         st.stop()
-    p = _profile_for_analysis(selected_analysis) or default_profile()
-    aspect_data, md_sections = load_aspect_data(selected_analysis)
+    p = active["profile"]
+    aspect_data = active["aspect_data"]
+    md_sections = active["md_sections"]
     if not aspect_data:
         st.info("No aspect data in this analysis.")
         st.stop()
@@ -789,9 +749,12 @@ elif page == "Explore":
         for pk in [x["key"] for x in pol]:
             all_segs.update(d.get(f"{pk}_by_segment", {}).keys())
 
+    _key_to_name = {k: d["aspect"]["display_name"] for k, d in aspect_data.items()}
+
     with st.sidebar:
         st.subheader("Filters")
-        sel_aspect = st.selectbox("Aspect", ["All"] + sorted(aspect_data.keys()))
+        sel_aspect = st.selectbox("Aspect", ["All"] + sorted(aspect_data.keys()),
+                                  format_func=lambda k: _key_to_name.get(k, k))
         sel_pol = st.selectbox("Polarity", ["All"] + [x["display"] for x in pol])
         if grouping:
             sel_seg = st.selectbox(seg_label, ["All"] + sort_segments(all_segs))
@@ -887,26 +850,24 @@ elif page == "Explore":
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) DASHBOARD
+# 4) DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 elif page == "Dashboard":
     st.title("Dashboard")
-    if not selected_analysis:
-        st.warning("No analysis selected.")
+    if not active:
+        st.warning("No analysis loaded. Run one or import a package on the Start page.")
         st.stop()
-    p = _profile_for_analysis(selected_analysis) or default_profile()
-    aspect_data, _ = load_aspect_data(selected_analysis)
+    p = active["profile"]
+    aspect_data = active["aspect_data"]
     pol = p["polarity"]
     grouping = p.get("grouping")
     seg_tmpl = grouping["label_template"] if grouping else "{g}"
     seg_label = grouping["display_name"] if grouping else "All"
 
     # Executive summary
-    exe = os.path.join(selected_analysis, "Executive_Summary.md")
-    if os.path.exists(exe):
-        with open(exe, encoding="utf-8") as f:
-            txt = f.read()
-        txt = re.sub(r"(\n\|[^\n]+)+", "", txt)
+    exec_md = active.get("executive_md", "")
+    if exec_md:
+        txt = re.sub(r"(\n\|[^\n]+)+", "", exec_md)
         st.markdown(txt)
     else:
         st.info("No executive summary.")
@@ -938,7 +899,8 @@ elif page == "Dashboard":
             fig = px.bar(df, x="Aspect", y="Count", color="Polarity", barmode="group",
                          color_discrete_map=cmap, title="By aspect",
                          labels={"Count": "Comments", "Aspect": ""})
-            fig.update_layout(xaxis_tickangle=-30, legend_title="", margin=dict(t=40, b=100))
+            fig.update_layout(xaxis_tickangle=-30, legend_title="", margin=dict(t=40, b=100),
+                              showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
     with c2:
         if grouping and ga_rows:
@@ -948,7 +910,7 @@ elif page == "Dashboard":
             fig2 = px.bar(df_g_long, x="Segment", y="Count", color="Polarity", barmode="group",
                           color_discrete_map=cmap, title=f"By {seg_label}",
                           labels={"Count": "Comments", "Segment": ""})
-            fig2.update_layout(legend_title="", margin=dict(t=40))
+            fig2.update_layout(legend_title="", margin=dict(t=40), showlegend=False)
             st.plotly_chart(fig2, use_container_width=True)
 
     st.divider()
@@ -966,9 +928,12 @@ elif page == "Dashboard":
         with col3:
             fig3 = px.bar(piv, x="Positivity", y="Aspect", orientation="h", color="Positivity",
                           color_continuous_scale="RdYlGn", range_color=[0, 1],
-                          title="Aspect ranking", labels={"Positivity": f"% {pos_key}", "Aspect": ""})
-            fig3.update_xaxes(tickformat=".0%")
-            fig3.update_layout(coloraxis_showscale=False, margin=dict(t=40))
+                          title="Aspect ranking", labels={"Positivity": f"% {pos_key}", "Aspect": ""},
+                          text=piv["Positivity"])
+            fig3.update_traces(texttemplate="%{text:.2%}", textposition="outside")
+            fig3.update_xaxes(tickformat=".2%")
+            fig3.update_layout(coloraxis_showscale=False, margin=dict(t=40, b=20),
+                               showlegend=False)
             st.plotly_chart(fig3, use_container_width=True)
         with col4:
             if grouping and ga_rows:
@@ -978,7 +943,7 @@ elif page == "Dashboard":
                 heat = df_g.pivot_table(index="Aspect", columns="Segment", values="Positivity")
                 n = len(heat)
                 fig4 = px.imshow(heat, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
-                                 text_auto=".0%", title="Positivity — Aspect × Segment")
+                                 text_auto=".2%", title="Positivity — Aspect × Segment")
                 fig4.update_layout(height=max(320, n * 55 + 80),
                                    margin=dict(t=50, b=20, l=10, r=10),
                                    coloraxis_showscale=False, xaxis=dict(side="bottom"))
@@ -994,157 +959,21 @@ elif page == "Dashboard":
         if st.button("Generate PDF report"):
             with st.spinner("Building PDF..."):
                 try:
-                    pdf_bytes = build_pdf(selected_analysis, aspect_data, p)
+                    pdf_bytes = build_pdf(active)
+                    fn = active.get("meta", {}).get("filename", "analysis").replace(".csv", "")
                     st.download_button("Download PDF", pdf_bytes,
-                                       file_name=f"feedback_{os.path.basename(selected_analysis)}.pdf",
+                                       file_name=f"{slugify(fn)}.pdf",
                                        mime="application/pdf")
                 except Exception as e:
                     st.error(f"PDF failed: {e}")
     with col_e2:
         if st.button("Export analysis package (.zip)"):
-            z = pkg.export_analysis(selected_analysis)
-            st.download_button("Download package", z,
-                               file_name=f"{os.path.basename(selected_analysis)}.zip",
-                               mime="application/zip")
-
-
-# ── PDF builder (generalized) ────────────────────────────────────────────────
-
-def build_pdf(analysis: str, aspect_data: dict, profile: dict) -> bytes:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.lib import colors
-    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Image,
-                                    Table, TableStyle, PageBreak)
-    from reportlab.platypus.flowables import HRFlowable
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    pol = profile["polarity"]
-    grouping = profile.get("grouping")
-    seg_tmpl = grouping["label_template"] if grouping else "{g}"
-
-    buf = io.BytesIO()
-    page_w, _ = A4
-    margin = 2.5 * cm
-    content_w = page_w - 2 * margin
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=margin, rightMargin=margin,
-                            topMargin=2 * cm, bottomMargin=2.5 * cm,
-                            title="Feedback Analysis")
-    ACCENT = colors.HexColor("#bc0031")
-    BLACK = colors.HexColor("#1B1918")
-    GREY1 = colors.HexColor("#D7D6D4")
-    GREY2 = colors.HexColor("#F5F5F3")
-    ss = getSampleStyleSheet()
-    S = {
-        "h1": ParagraphStyle("h1", parent=ss["Heading1"], fontName="Helvetica-Bold",
-                             fontSize=20, spaceBefore=22, spaceAfter=10, textColor=ACCENT),
-        "h2": ParagraphStyle("h2", parent=ss["Heading2"], fontName="Helvetica-Bold",
-                             fontSize=13, spaceBefore=14, spaceAfter=6, textColor=BLACK),
-        "h3": ParagraphStyle("h3", parent=ss["Heading3"], fontName="Helvetica-Bold",
-                             fontSize=11, spaceBefore=10, spaceAfter=4, textColor=BLACK),
-        "body": ParagraphStyle("body", parent=ss["Normal"], fontName="Times-Roman",
-                               fontSize=10, leading=15, spaceAfter=6, textColor=BLACK),
-        "bullet": ParagraphStyle("bul", parent=ss["Normal"], fontName="Times-Roman",
-                                 fontSize=10, leading=14, leftIndent=14, spaceAfter=3, textColor=BLACK),
-        "cover_title": ParagraphStyle("ct", parent=ss["Title"], fontName="Helvetica-Bold",
-                                      fontSize=28, alignment=0, spaceAfter=10, textColor=BLACK),
-    }
-
-    def _esc(t):
-        for src, dst in {"—": "--", "–": "-", "“": '"', "”": '"', "‘": "'", "’": "'",
-                         "…": "...", "•": "-"}.items():
-            t = t.replace(src, dst)
-        t = "".join(c if ord(c) < 256 else "-" for c in t)
-        return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    def _md(t):
-        t = _esc(t)
-        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
-        t = re.sub(r"\*(.+?)\*", r"<i>\1</i>", t)
-        return t
-
-    def _render(text, story):
-        for line in text.split("\n"):
-            s = line.strip()
-            if not s:
-                story.append(Spacer(1, 0.1 * cm)); continue
-            if s.startswith("- ") or s.startswith("* "):
-                story.append(Paragraph("• " + _md(s[2:]), S["bullet"]))
-            elif s.startswith("**") and s.endswith("**") and len(s) > 4:
-                story.append(Paragraph(_md(s), S["h3"]))
+            rd = active.get("run_dir")
+            if rd and os.path.isdir(rd):
+                z = pkg.export_analysis(rd)
+                fn = active.get("meta", {}).get("filename", "analysis").replace(".csv", "")
+                st.download_button("Download package", z,
+                                   file_name=f"{slugify(fn)}.zip",
+                                   mime="application/zip")
             else:
-                story.append(Paragraph(_md(s), S["body"]))
-
-    def _img(fig, w, h):
-        b = io.BytesIO()
-        fig.savefig(b, format="png", dpi=150, bbox_inches="tight", facecolor="white")
-        plt.close(fig); b.seek(0)
-        return Image(b, width=w * cm, height=h * cm)
-
-    story = []
-    # Cover
-    red = Table([["  "]], colWidths=[content_w], rowHeights=[0.6 * cm])
-    red.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ACCENT)]))
-    story += [red, Spacer(1, 4 * cm), Paragraph("Feedback Analysis", S["cover_title"])]
-    meta = os.path.join(analysis, "meta.json")
-    if os.path.exists(meta):
-        with open(meta) as f:
-            m = json.load(f)
-        story.append(Paragraph(_esc(m.get("filename", "")),
-                               ParagraphStyle("cs", parent=ss["Normal"], fontSize=13, textColor=BLACK)))
-    story.append(PageBreak())
-
-    # Executive
-    exe = os.path.join(analysis, "Executive_Summary.md")
-    if os.path.exists(exe):
-        with open(exe, encoding="utf-8") as f:
-            em = f.read()
-        em = re.sub(r"\n\|[^\n]+", "", em)
-        story += [Paragraph("Executive Summary", S["h1"]),
-                  HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
-        for line in em.split("\n"):
-            s = line.strip()
-            if not s or s.startswith("|") or s.startswith("---"):
-                continue
-            if s.startswith("## "):
-                story.append(Paragraph(_md(s[3:]), S["h2"]))
-            elif s.startswith("### "):
-                story.append(Paragraph(_md(s[4:]), S["h3"]))
-            else:
-                story.append(Paragraph(_md(s), S["body"]))
-    story.append(PageBreak())
-
-    # Per-aspect
-    for k in sorted(aspect_data):
-        d = aspect_data[k]
-        display = d["aspect"]["display_name"]
-        story += [PageBreak(), Paragraph(_esc(display), S["h1"]),
-                  HRFlowable(width=content_w, thickness=2, color=ACCENT), Spacer(1, 0.3 * cm)]
-        # Segment table
-        if grouping:
-            all_segs = sort_segments(set().union(*[d.get(f"{x['key']}_by_segment", {}).keys() for x in pol]))
-            header = [grouping["display_name"]] + [x["display"] for x in pol] + ["Total"]
-            rows_t = []
-            for seg in all_segs:
-                vals = [d.get(f"{x['key']}_by_segment", {}).get(seg, {}).get("comment_count", 0) for x in pol]
-                rows_t.append([seg_tmpl.format(g=seg)] + [str(v) for v in vals] + [str(sum(vals))])
-            tbl = Table([header] + rows_t, colWidths=[5 * cm] + [2.5 * cm] * (len(pol) + 1))
-            tbl.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTNAME", (0, 1), (-1, -1), "Times-Roman"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY2]),
-                ("GRID", (0, 0), (-1, -1), 0.5, GREY1),
-            ]))
-            story += [Paragraph("Counts by segment", S["h2"]), Spacer(1, 0.15 * cm), tbl]
-
-    doc.build(story)
-    buf.seek(0)
-    return buf.getvalue()
+                st.error("No run directory available for export.")

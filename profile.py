@@ -222,51 +222,9 @@ def load(path: str) -> dict:
 
 def save(p: dict, path: str) -> None:
     validate(p)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(p, f, ensure_ascii=False, indent=2)
-
-
-def profiles_dir(working_dir: str) -> str:
-    return os.path.join(working_dir, "profiles")
-
-
-def analyses_dir(working_dir: str) -> str:
-    return os.path.join(working_dir, "analyses")
-
-
-def list_profiles(working_dir: str) -> list[dict]:
-    pd = profiles_dir(working_dir)
-    out = []
-    if not os.path.isdir(pd):
-        return out
-    for fn in sorted(os.listdir(pd)):
-        if fn.endswith(".json"):
-            try:
-                out.append(load(os.path.join(pd, fn)))
-            except Exception:
-                continue
-    return out
-
-
-def storage_config_path() -> str:
-    home = os.path.expanduser("~")
-    cfg_dir = os.path.join(home, ".config", "feedback-dashboard")
-    os.makedirs(cfg_dir, exist_ok=True)
-    return os.path.join(cfg_dir, "storage.json")
-
-
-def load_storage_config() -> dict:
-    p = storage_config_path()
-    if os.path.exists(p):
-        with open(p, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def save_storage_config(cfg: dict) -> None:
-    with open(storage_config_path(), "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
 
 
 if __name__ == "__main__":
