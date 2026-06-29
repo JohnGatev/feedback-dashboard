@@ -319,45 +319,86 @@ def _call_llm(profile: dict, system: str, user: str, api_key: str, timeout: int 
     return r.json()["choices"][0]["message"]["content"]
 
 
-def _models_url(endpoint: str) -> list[str]:
-    """Derive candidate /models URLs from a chat-completions endpoint."""
-    from urllib.parse import urlparse, urlunparse
+def _models_urls(endpoint: str) -> list[str]:
+    """Derive candidate model-list URLs from a chat-completions endpoint.
+
+    Preserves any /v1 path prefix. For:
+      https://host/chat/completions        -> https://host/v1/models, https://host/models
+      https://host/v1/chat/completions     -> https://host/v1/models, https://host/models
+    Also tries the LiteLLM-specific /model/info and /v1/model/info endpoints
+    which return richer metadata for proxies that support them.
+    """
+    from urllib.parse import urlparse
     parsed = urlparse(endpoint)
     base = f"{parsed.scheme}://{parsed.netloc}"
-    return [f"{base}/v1/models", f"{base}/models"]
+    # Keep /v1 if the chat path sits under it, else add it.
+    prefix = "/v1" if parsed.path.startswith("/v1") else ""
+    return [
+        f"{base}{prefix}/models",
+        f"{base}/v1/models",
+        f"{base}/models",
+        f"{base}{prefix}/model/info",
+        f"{base}/v1/model/info",
+    ]
+
+
+def _parse_model_ids(data) -> list[str]:
+    """Extract model IDs from OpenAI-style or LiteLLM-style responses."""
+    ids = []
+    if isinstance(data, list):
+        for m in data:
+            mid = m.get("id") if isinstance(m, dict) else m
+            if mid:
+                ids.append(mid)
+    elif isinstance(data, dict):
+        # OpenAI shape: {"data": [{"id": ...}, ...]}
+        if "data" in data and isinstance(data["data"], list):
+            for m in data["data"]:
+                if isinstance(m, dict):
+                    mid = m.get("id") or m.get("model_name") or m.get("model")
+                    # LiteLLM /model/info nests under model_info.litellm_params.model
+                    if not mid and isinstance(m.get("model_info"), dict):
+                        lp = m["model_info"].get("litellm_params", {})
+                        mid = lp.get("model") or lp.get("model_name")
+                else:
+                    mid = m
+                if mid:
+                    ids.append(mid)
+        # LiteLLM /model/info sometimes returns a bare list of model dicts
+        elif "models" in data and isinstance(data["models"], list):
+            for m in data["models"]:
+                mid = m if isinstance(m, str) else (m.get("id") or m.get("model") if isinstance(m, dict) else None)
+                if mid:
+                    ids.append(mid)
+    return ids
 
 
 def fetch_models(endpoint: str, api_key: str) -> list[str]:
-    """GET the available model IDs from an OpenAI-compatible endpoint.
+    """GET the available model IDs from an OpenAI/LiteLLM-compatible endpoint.
 
-    Raises on auth failure, timeout, or empty model list. Returns sorted IDs.
+    Sends both Authorization: Bearer and x-litellm-api-key headers for
+    compatibility with both proxy flavours. Raises on auth failure, timeout,
+    or empty model list. Returns sorted, de-duplicated IDs.
     """
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "x-litellm-api-key": api_key,
+    }
     last_err = None
-    for url in _models_url(endpoint):
+    for url in _models_urls(endpoint):
         try:
             r = requests.get(url, headers=headers, timeout=15)
             if r.status_code == 401:
-                raise PermissionError("API key rejected by the endpoint (401).")
+                raise PermissionError(
+                    "API key rejected (401). Make sure your key starts with 'sk-'.")
             if r.status_code == 404:
                 last_err = ValueError(f"{url} returned 404")
                 continue
             r.raise_for_status()
-            data = r.json()
-            ids = []
-            if isinstance(data, list):
-                for m in data:
-                    mid = m.get("id") if isinstance(m, dict) else m
-                    if mid:
-                        ids.append(mid)
-            elif isinstance(data, dict) and "data" in data:
-                for m in data["data"]:
-                    mid = m.get("id") if isinstance(m, dict) else m
-                    if mid:
-                        ids.append(mid)
+            ids = _parse_model_ids(r.json())
             if ids:
                 return sorted(set(ids))
-            last_err = ValueError("Endpoint returned no model IDs.")
+            last_err = ValueError(f"{url} returned no model IDs.")
         except PermissionError:
             raise
         except Exception as e:
