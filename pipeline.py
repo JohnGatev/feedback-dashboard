@@ -239,8 +239,10 @@ SECTION_BLOCKS = {
 }
 
 
-def _build_aspect_system_prompt(profile: dict) -> str:
-    base = profile["prompts"]["per_aspect_system"]
+def _build_aspect_system_prompt(profile: dict, aspect_key: str | None = None) -> str:
+    overrides = profile.get("prompts", {}).get("aspect_overrides", {}) or {}
+    base = overrides.get(aspect_key, profile["prompts"]["per_aspect_system"]) \
+        if aspect_key else profile["prompts"]["per_aspect_system"]
     secs = profile.get("output_sections", [])
     blocks = [SECTION_BLOCKS[s] for s in secs if s in SECTION_BLOCKS]
     structure = "\n\n".join(blocks)
@@ -259,6 +261,40 @@ def _build_aspect_system_prompt(profile: dict) -> str:
         f"Output format (markdown):\n\n## Aspect: <aspect.display_name>\n\n{structure}\n"
     )
     return f"{header}\n\n=== USER-PROVIDED BASE PROMPT ===\n{base}".strip()
+
+
+# ── Prompt generation from natural-language description ──────────────────────
+
+PROMPT_GENERATOR_SYSTEM = """You are a prompt engineer for a feedback-analysis LLM.
+
+The user describes what they want to compare or analyze in a set of feedback
+comments. Turn that description into a system prompt that instructs an
+evaluation-analyst LLM how to summarize one aspect of the feedback.
+
+Rules:
+- Output ONLY the system prompt text. No preamble, no explanation, no markdown
+  fences, no "Here is your prompt:".
+- The prompt must be written as direct instructions to the summarizer model
+  (imperative voice, second person where natural).
+- Cover: what to focus on, how to weight evidence, how to handle minority
+  views, what tone/register to use.
+- Do NOT include structural section instructions (counts, tables, quotes) -
+  those are appended automatically by the pipeline.
+- Do NOT include placeholders or angle-bracket templates.
+- Keep it under 250 words. Plain text, no headers.
+"""
+
+
+def generate_prompt_from_description(profile: dict, description: str,
+                                      api_key: str, aspect_label: str = "") -> str:
+    """Call the LLM to turn a natural-language description into a system prompt.
+
+    `aspect_label` is optional context (e.g. the specific aspect name) so the
+    generated prompt can reference it. Returns the generated prompt text.
+    """
+    ctx = f" (focus aspect: {aspect_label})" if aspect_label else ""
+    user = f"Analytical intent{ctx}:\n{description}\n\nWrite the system prompt."
+    return _call_llm(profile, PROMPT_GENERATOR_SYSTEM, user, api_key, timeout=60)
 
 
 def _aspect_user_message(aspect_data: dict) -> str:
@@ -283,6 +319,55 @@ def _call_llm(profile: dict, system: str, user: str, api_key: str, timeout: int 
     return r.json()["choices"][0]["message"]["content"]
 
 
+def _models_url(endpoint: str) -> list[str]:
+    """Derive candidate /models URLs from a chat-completions endpoint."""
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(endpoint)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return [f"{base}/v1/models", f"{base}/models"]
+
+
+def fetch_models(endpoint: str, api_key: str) -> list[str]:
+    """GET the available model IDs from an OpenAI-compatible endpoint.
+
+    Raises on auth failure, timeout, or empty model list. Returns sorted IDs.
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    last_err = None
+    for url in _models_url(endpoint):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            if r.status_code == 401:
+                raise PermissionError("API key rejected by the endpoint (401).")
+            if r.status_code == 404:
+                last_err = ValueError(f"{url} returned 404")
+                continue
+            r.raise_for_status()
+            data = r.json()
+            ids = []
+            if isinstance(data, list):
+                for m in data:
+                    mid = m.get("id") if isinstance(m, dict) else m
+                    if mid:
+                        ids.append(mid)
+            elif isinstance(data, dict) and "data" in data:
+                for m in data["data"]:
+                    mid = m.get("id") if isinstance(m, dict) else m
+                    if mid:
+                        ids.append(mid)
+            if ids:
+                return sorted(set(ids))
+            last_err = ValueError("Endpoint returned no model IDs.")
+        except PermissionError:
+            raise
+        except Exception as e:
+            last_err = e
+    raise ConnectionError(
+        f"Could not retrieve models from {endpoint}. "
+        f"Check your API key and endpoint. ({last_err})"
+    )
+
+
 def _load_kb(profile: dict, base_dir: str) -> str:
     parts = []
     for rel in profile.get("kb_files", []):
@@ -298,10 +383,7 @@ def _load_kb(profile: dict, base_dir: str) -> str:
 def generate_aspect_summaries(profile: dict, json_dir: str, md_dir: str,
                               api_key: str, base_dir: str = ".") -> list[str]:
     os.makedirs(md_dir, exist_ok=True)
-    system = _build_aspect_system_prompt(profile)
     kb = _load_kb(profile, base_dir)
-    if kb:
-        system = f"{system}\n\n=== KNOWLEDGE BASE ===\n{kb}"
     import glob
     json_files = sorted(glob.glob(os.path.join(json_dir, "*.json")))
     if not json_files:
@@ -311,6 +393,9 @@ def generate_aspect_summaries(profile: dict, json_dir: str, md_dir: str,
         with open(jf, encoding="utf-8") as f:
             data = json.load(f)
         key = data["aspect"]["aspect_key"]
+        system = _build_aspect_system_prompt(profile, aspect_key=key)
+        if kb:
+            system = f"{system}\n\n=== KNOWLEDGE BASE ===\n{kb}"
         try:
             text = _call_llm(profile, system, _aspect_user_message(data), api_key)
             return key, text

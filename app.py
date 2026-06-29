@@ -427,8 +427,8 @@ elif page == "Profiles":
 elif page == "Run":
     st.title("Run an analysis")
     st.caption("Upload a Qualtrics CSV. Aspects and grouping are auto-detected; "
-               "review and edit before running. A profile supplies the prompts "
-               "and output sections.")
+               "review them, define what you want to compare in natural language, "
+               "generate prompts, and run.")
     if not wd:
         st.warning("Set a working directory in Setup first.")
         st.stop()
@@ -447,65 +447,225 @@ elif page == "Run":
                f"{len(det['aspects'])} aspects, "
                f"grouping: {det['grouping']['column'] if det['grouping'] else 'none'}")
 
-    with st.expander("Detected aspects (edit before run)", expanded=True):
+    # ── Detected Aspects ──
+    with st.expander("Detected Aspects", expanded=True):
         keep = []
         for i, a in enumerate(det["aspects"]):
-            cols = st.columns([1, 3, 3, 1])
+            cols = st.columns([1, 9])
             with cols[0]:
-                inc = st.checkbox("include", value=True, key=f"inc{i}")
+                inc = st.checkbox("", value=True, key=f"inc{i}")
             with cols[1]:
-                a["display_label"] = st.text_input("label", a["display_label"], key=f"dl{i}")
-            with cols[2]:
-                a["aspect_key"] = st.text_input("key", a["aspect_key"], key=f"dk{i}")
-            with cols[3]:
-                st.caption(f"tip={a['columns']['tip']}\ntop={a['columns']['top']}")
+                a["display_label"] = st.text_input(
+                    "Label", value=a["display_label"].capitalize(), key=f"dl{i}",
+                    label_visibility="collapsed")
             if inc:
                 keep.append(a)
         det["aspects"] = keep
+        if not det["aspects"]:
+            st.warning("No aspects selected. Tick at least one to run.")
 
+    # ── Grouping ──
     with st.expander("Grouping", expanded=False):
+        st.caption("Grouping splits comments by a survey variable (e.g. team, "
+                   "tutorial group). When enabled, the analysis shows per-segment "
+                   "counts, differences, and a heatmap. Leave disabled if your "
+                   "survey has no such variable.")
         has_g = st.checkbox("Use grouping/segment variable",
                             value=det["grouping"] is not None)
         if has_g:
             g = det["grouping"] or {}
-            g["column"] = st.text_input("Grouping column code", g.get("column", ""))
-            g["display_name"] = st.text_input("Display name", g.get("display_name", "Group"))
-            g["label_template"] = st.text_input("Label template ({g})", g.get("label_template", "Group {g}"))
+            g["column"] = st.text_input(
+                "Grouping column code", g.get("column", ""),
+                help="The Qualtrics column ID (e.g. Q1_Team) that holds each "
+                     "respondent's segment value. Must match the CSV header code exactly.")
+            g["display_name"] = st.text_input(
+                "Display name", g.get("display_name", "Group"),
+                help="Human-readable label shown in charts, tables, and filters "
+                     "(e.g. 'Team').")
+            g["label_template"] = st.text_input(
+                "Label template", g.get("label_template", "Group {g}"),
+                help="How individual segment labels appear in the UI. Use {g} for "
+                     "the value, e.g. 'Team {g}' becomes 'Team PC&J'.")
             det["grouping"] = g
         else:
             det["grouping"] = None
 
-    # Inherit prompts/sections/model from an existing profile or defaults
-    pros = list_profiles(wd)
-    inherit = st.selectbox(
-        "Inherit prompts/sections/model from profile",
-        ["— defaults —"] + [p["name"] for p in pros])
-    base = default_profile()
-    if inherit != "— defaults —":
-        base = next(p for p in pros if p["name"] == inherit)
+    # ── Model & API key ──
+    with st.expander("Model", expanded=True):
+        api_key = st.text_input("API key", type="password",
+                                help="Your LLM proxy API key. Used to fetch "
+                                     "available models and to run the analysis.")
+        KNOWN_ENDPOINTS = [
+            "https://llmproxy.uva.nl/chat/completions",
+            "https://ai-research-proxy.azurewebsites.net/v1/chat/completions",
+            "Custom…",
+        ]
+        endpoint_sel = st.selectbox("Endpoint", KNOWN_ENDPOINTS,
+                                    help="The chat-completions URL of your LLM proxy.")
+        if endpoint_sel == "Custom…":
+            endpoint = st.text_input("Custom endpoint URL", "")
+        else:
+            endpoint = endpoint_sel
 
-    with st.expander("Prompts & sections (inherited, edit for this run)", expanded=False):
+        model_ids: list[str] = []
+        if "fb_models" not in st.session_state:
+            st.session_state["fb_models"] = []
+        c_fetch, _ = st.columns([1, 4])
+        with c_fetch:
+            if st.button("Fetch available models"):
+                if not api_key or not endpoint:
+                    st.error("Enter an API key and endpoint first.")
+                else:
+                    try:
+                        with st.spinner("Fetching models…"):
+                            st.session_state["fb_models"] = pipeline.fetch_models(endpoint, api_key)
+                        st.success(f"Found {len(st.session_state['fb_models'])} models.")
+                    except Exception as e:
+                        st.session_state["fb_models"] = []
+                        st.error(f"API key error: could not retrieve models. "
+                                 f"Check your key and endpoint. ({e})")
+        model_ids = st.session_state.get("fb_models", [])
+        if model_ids:
+            model_name = st.selectbox("Model", model_ids)
+        else:
+            model_name = None
+            st.caption("No models loaded yet. Enter your API key and click "
+                       "“Fetch available models”.")
+
+    # ── Analysis Instructions ──
+    with st.expander("Analysis Instructions", expanded=True):
         from profile import VALID_OUTPUT_SECTIONS
         group_only = {"group_counts_table", "group_differences"}
         if det["grouping"] is None:
             avail_secs = [s for s in VALID_OUTPUT_SECTIONS if s not in group_only]
-            default_secs = [s for s in base["output_sections"] if s not in group_only]
+            default_secs = [s for s in default_profile()["output_sections"]
+                            if s not in group_only]
         else:
             avail_secs = list(VALID_OUTPUT_SECTIONS)
-            default_secs = list(base["output_sections"])
-        secs = st.multiselect("Output sections", avail_secs, default=default_secs)
-        pa = st.text_area("Per-aspect system prompt (base)", base["prompts"]["per_aspect_system"], height=180)
-        ex = st.text_area("Executive summary system prompt", base["prompts"]["executive_system"], height=180)
-        endpoint = st.text_input("LLM endpoint", base["model"]["endpoint"])
-        model_name = st.text_input("Model name", base["model"]["name"])
+            default_secs = list(default_profile()["output_sections"])
+        secs = st.multiselect("Sections to include in each aspect summary",
+                              avail_secs, default=default_secs,
+                              help="Which structural sections each aspect summary "
+                                   "must contain. Group-only sections are hidden "
+                                   "when grouping is disabled.")
 
+        st.markdown("---")
+        st.subheader("Global prompt")
+        st.caption("Describe in natural language what you want to compare or "
+                   "analyze across all aspects. Click Generate to turn it into "
+                   "a system prompt; edit the result before running. This prompt "
+                   "applies to every aspect unless overridden below.")
+        global_intent = st.text_area(
+            "What do you want to compare or analyze?", height=80,
+            placeholder="e.g. Compare how different teams perceive the formality "
+                       "of the meeting and whether it feels relevant to their role.")
+        if "fb_global_prompt" not in st.session_state:
+            st.session_state["fb_global_prompt"] = ""
+        c_gen_g, _ = st.columns([1, 4])
+        with c_gen_g:
+            if st.button("Generate global prompt"):
+                if not api_key or not model_name:
+                    st.error("Enter an API key and select a model first.")
+                elif not global_intent.strip():
+                    st.error("Describe what you want to analyze first.")
+                else:
+                    try:
+                        with st.spinner("Generating prompt…"):
+                            tmp_prof = default_profile()
+                            tmp_prof["model"]["endpoint"] = endpoint
+                            tmp_prof["model"]["name"] = model_name
+                            st.session_state["fb_global_prompt"] = \
+                                pipeline.generate_prompt_from_description(
+                                    tmp_prof, global_intent, api_key)
+                        st.success("Global prompt generated. Review and edit below.")
+                    except Exception as e:
+                        st.error(f"Generation failed: {e}")
+        pa = st.text_area("Global per-aspect system prompt",
+                          value=st.session_state["fb_global_prompt"], height=180,
+                          help="The generated or hand-written base prompt. "
+                               "Structural sections (counts, tables, quotes) are "
+                               "appended automatically at run time.")
+
+        st.markdown("---")
+        st.subheader("Per-aspect overrides")
+        st.caption("Optionally write a separate prompt for specific aspects. "
+                   "Leave blank to use the global prompt for that aspect.")
+        if "fb_overrides" not in st.session_state:
+            st.session_state["fb_overrides"] = {}
+        for a in det["aspects"]:
+            ak = a["aspect_key"]
+            label = a["display_label"]
+            with st.expander(f"Override for: {label}", expanded=False):
+                ov_intent = st.text_area(f"What should this aspect focus on?", height=60,
+                                         key=f"ovint_{ak}",
+                                         placeholder="Optional — leave blank to use the global prompt.")
+                cur = st.session_state["fb_overrides"].get(ak, "")
+                c_gen_o, _ = st.columns([1, 4])
+                with c_gen_o:
+                    if st.button(f"Generate", key=f"genov_{ak}"):
+                        if not api_key or not model_name:
+                            st.error("Enter an API key and select a model first.")
+                        elif not ov_intent.strip():
+                            st.error("Describe the focus for this aspect first.")
+                        else:
+                            try:
+                                with st.spinner("Generating…"):
+                                    tmp_prof = default_profile()
+                                    tmp_prof["model"]["endpoint"] = endpoint
+                                    tmp_prof["model"]["name"] = model_name
+                                    st.session_state["fb_overrides"][ak] = \
+                                        pipeline.generate_prompt_from_description(
+                                            tmp_prof, ov_intent, api_key, aspect_label=label)
+                                st.success("Override prompt generated.")
+                            except Exception as e:
+                                st.error(f"Generation failed: {e}")
+                ov = st.text_area(f"Override prompt for {label}",
+                                  value=cur, height=120, key=f"ovtxt_{ak}")
+                if ov.strip():
+                    st.session_state["fb_overrides"][ak] = ov
+                elif ak in st.session_state["fb_overrides"]:
+                    del st.session_state["fb_overrides"][ak]
+
+        st.markdown("---")
+        st.subheader("Executive summary")
+        st.caption("Instructions for the model that synthesizes all aspect "
+                   "summaries into one document.")
+        exec_intent = st.text_area(
+            "What should the executive summary focus on?", height=70,
+            placeholder="e.g. Highlight cross-cutting findings and identify "
+                       "which aspects are robust vs tentative.")
+        if "fb_exec_prompt" not in st.session_state:
+            st.session_state["fb_exec_prompt"] = ""
+        c_gen_e, _ = st.columns([1, 4])
+        with c_gen_e:
+            if st.button("Generate executive prompt"):
+                if not api_key or not model_name:
+                    st.error("Enter an API key and select a model first.")
+                elif not exec_intent.strip():
+                    st.error("Describe the executive summary focus first.")
+                else:
+                    try:
+                        with st.spinner("Generating…"):
+                            tmp_prof = default_profile()
+                            tmp_prof["model"]["endpoint"] = endpoint
+                            tmp_prof["model"]["name"] = model_name
+                            st.session_state["fb_exec_prompt"] = \
+                                pipeline.generate_prompt_from_description(
+                                    tmp_prof, exec_intent, api_key)
+                        st.success("Executive prompt generated.")
+                    except Exception as e:
+                        st.error(f"Generation failed: {e}")
+        ex = st.text_area("Executive summary instructions",
+                          value=st.session_state["fb_exec_prompt"], height=160)
+
+    # ── Run ──
+    st.divider()
     run_name = st.text_input("Name this analysis", value=up.name.replace(".csv", ""))
-    api_key = st.text_input("API key", type="password")
-    if st.button("Run pipeline", type="primary"):
-        if not api_key:
-            st.error("API key required.")
-            st.stop()
-        # Build profile
+    can_run = bool(det["aspects"] and api_key and model_name and endpoint
+                   and pa.strip() and ex.strip())
+    if not can_run:
+        st.caption("Complete the steps above (aspects, model, prompts) before running.")
+    if st.button("Run pipeline", type="primary", disabled=not can_run):
         p = default_profile()
         p["name"] = run_name
         p["delimiter"] = det["delimiter"]
@@ -516,6 +676,7 @@ elif page == "Run":
         p["output_sections"] = secs
         p["prompts"]["per_aspect_system"] = pa
         p["prompts"]["executive_system"] = ex
+        p["prompts"]["aspect_overrides"] = dict(st.session_state.get("fb_overrides", {}))
         p["model"]["endpoint"] = endpoint
         p["model"]["name"] = model_name
         try:
@@ -542,7 +703,6 @@ elif page == "Run":
         pipeline.generate_executive_summary(p, md_out, exe, api_key)
 
         save_profile(p, os.path.join(run_dir, "profile.json"))
-        # Copy the input CSV into the run for reproducibility
         shutil.copy(tmp_csv, os.path.join(run_dir, up.name))
         with open(os.path.join(run_dir, "meta.json"), "w") as f:
             json.dump({"id": run_id, "filename": up.name,

@@ -47,7 +47,7 @@ def default_profile() -> dict:
         ],
         "aspects": [],
         "output_sections": list(DEFAULT_OUTPUT_SECTIONS),
-        "prompts": {"per_aspect_system": "", "executive_system": ""},
+        "prompts": {"per_aspect_system": "", "executive_system": "", "aspect_overrides": {}},
         "kb_files": [],
         "model": {
             "endpoint": "https://llmproxy.uva.nl/chat/completions",
@@ -114,13 +114,19 @@ def validate(p: dict) -> None:
         for s in ("group_counts_table", "group_differences"):
             assert s not in secs, f"section {s} requires grouping to be set"
 
-    # prompts: object with two string fields
+    # prompts: object with required global + executive, optional aspect_overrides
     pr = p.get("prompts", {})
     assert isinstance(pr, dict), "prompts must be object"
     assert "per_aspect_system" in pr and isinstance(pr["per_aspect_system"], str), \
         "prompts.per_aspect_system required (string)"
     assert "executive_system" in pr and isinstance(pr["executive_system"], str), \
         "prompts.executive_system required (string)"
+    overrides = pr.get("aspect_overrides", {})
+    if overrides is not None:
+        assert isinstance(overrides, dict), "prompts.aspect_overrides must be object"
+        for k, v in overrides.items():
+            assert isinstance(k, str) and isinstance(v, str), \
+                "prompts.aspect_overrides must be {aspect_key: string}"
 
     # model
     m = p.get("model", {})
